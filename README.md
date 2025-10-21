@@ -117,11 +117,54 @@ These actions are enabled once a corresponding URL is recorded by a successful c
 
 For local/manual testing without a real Coder instance, see `plugins/coder-workspace/mock-server.md` for a minimal mock endpoint you can run to validate requests from the plugin.
 
+## Get the Gerrit source
+
+This plugin lives inside the Gerrit monorepo. If you don’t have the source yet:
+
+```bash
+git clone https://gerrit.googlesource.com/gerrit
+cd gerrit
+```
+
+## Install Bazel on Ubuntu
+
+This repo pins Bazel to `7.6.1` via the top-level `.bazelversion` file. The easiest way to match that on Ubuntu (including WSL) is Bazelisk.
+
+Bazelisk auto-downloads the correct Bazel version based on `.bazelversion`.
+
+```bash
+sudo mkdir -p /usr/local/bin
+curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o /tmp/bazelisk
+sudo install /tmp/bazelisk /usr/local/bin/bazel
+
+# Verify (should report 7.6.1 because of .bazelversion)
+bazel version
+```
+
+## Initialize Gerrit submodules
+
+This plugin is built from the Gerrit source tree, which uses git submodules for some dependencies (e.g., `modules/jgit`, `modules/java-prettify`). If these submodules are not initialized, you may see errors such as:
+
+> No MODULE.bazel, REPO.bazel, or WORKSPACE file found in modules/jgit
+
+From the Gerrit repo root, initialize submodules:
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+Optional: If you encountered fetch/toolchain hiccups previously, clear external repos before rebuilding:
+
+```bash
+bazel clean --expunge_external
+```
+
 ## Build
 
 From the Gerrit repo root:
 
-```
+```bash
 bazel build plugins/coder-workspace:coder-workspace
 ```
 
