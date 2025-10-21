@@ -58,7 +58,12 @@ jobs:
         run: |
           # Copy our plugin into the freshly cloned Gerrit tree
           mkdir -p "plugins/coder-workspace"
-          rsync -a --delete --exclude '.git/' --exclude '.github/' "${{ github.workspace }}/" "plugins/coder-workspace/"
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'gerrit-src/' \
+            --exclude 'dist/' \
+            "${{ github.workspace }}/" "plugins/coder-workspace/"
           bazel build plugins/coder-workspace:coder-workspace
 
       - name: Prepare artifacts
