@@ -13,7 +13,11 @@ gerrit_js_bundle(
 
 gerrit_plugin(
     name = "coder-workspace",
-    srcs = ["java/com/gerritforge/gerrit/plugins/coderworkspace/Module.java"],
+    srcs = [
+        "java/com/gerritforge/gerrit/plugins/coderworkspace/Module.java",
+        "java/com/gerritforge/gerrit/plugins/coderworkspace/ConfigInfo.java",
+        "java/com/gerritforge/gerrit/plugins/coderworkspace/GetConfig.java",
+    ],
     manifest_entries = [
         "Gerrit-PluginName: coder-workspace",
         "Gerrit-Module: com.gerritforge.gerrit.plugins.coderworkspace.Module",

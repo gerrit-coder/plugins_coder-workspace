@@ -5,10 +5,10 @@
 (function () {
   const PLUGIN_NAME = 'coder-workspace';
   const ACTION_LABEL = 'Create Coder Workspace';
-  const OPEN_LAST_ACTION_LABEL = 'Open Last Coder Workspace';
-  const OPEN_LAST_CONTEXT_ACTION_LABEL = 'Open Last Coder Workspace (This Repo/Branch)';
-  const OPEN_LAST_CHANGE_ACTION_LABEL = 'Open Last Coder Workspace (This Change/Patchset)';
-  const SETTINGS_ACTION_LABEL = 'Coder Settings';
+  const OPEN_LAST_ACTION_LABEL = 'Open Coder Workspace';
+  const DELETE_ACTION_LABEL = 'Delete Coder Workspace';
+  // Only keep global "Open Last" action
+  // Settings are configured server-side in gerrit.config; no user-visible Settings menu.
 
   // Minimal config: server base URL and template id or version id.
   let config = {
@@ -39,7 +39,6 @@
     historyLimit: 10,
   };
 
-  const STORAGE_KEY = 'gerrit-coder-workspace-config';
   const STORAGE_LAST_KEY = 'gerrit-coder-workspace-last-url';
   const STORAGE_LAST_CTX_PREFIX = 'gerrit-coder-workspace-last-url-ctx::';
   const STORAGE_LAST_CTX_META_PREFIX = 'gerrit-coder-workspace-last-meta-ctx::';
@@ -70,8 +69,8 @@
     let patchset = '';
 
     const changeEl = grApp && grApp.shadowRoot && grApp.shadowRoot.querySelector('gr-change-view');
-    const change = changeEl && changeEl.change;
-    const currentRevision = changeEl && changeEl.currentRevision;
+  const change = changeEl && changeEl.change;
+  const currentRevision = changeEl && changeEl.currentRevision;
     if (change) {
       project = change.project || '';
       branch = change.branch || '';
@@ -79,6 +78,15 @@
       if (change.revisions && currentRevision && change.revisions[currentRevision]) {
         const rev = change.revisions[currentRevision];
         patchset = (rev && rev._number) || '';
+      }
+      // Default to latest patchset if not present or falsy
+      if (!patchset && change.revisions) {
+        try {
+          const nums = Object.values(change.revisions)
+            .map(r => r && r._number)
+            .filter(n => typeof n === 'number');
+          if (nums.length) patchset = String(Math.max.apply(null, nums));
+        } catch (_) {}
       }
     }
     if (!project || !changeNum) {
@@ -217,6 +225,22 @@
   function saveLastMeta(meta) {
     try { localStorage.setItem(STORAGE_LAST_META_KEY, JSON.stringify(meta || {})); } catch (_) {}
   }
+  async function deleteWorkspaceByName(workspaceName) {
+    const headers = {'Accept': 'application/json'};
+    if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
+    const base = (config.serverUrl || '').replace(/\/$/, '');
+    const userSeg = encodeURIComponent(config.user || 'me');
+    const nameSeg = encodeURIComponent(workspaceName);
+    const url = config.organization
+      ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
+      : `${base}/api/v2/users/${userSeg}/workspaces/${nameSeg}`;
+    const res = await fetch(url, { method: 'DELETE', headers });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Coder API error ${res.status}: ${text}`);
+    }
+  }
+
   function loadLastMeta() {
     try { return JSON.parse(localStorage.getItem(STORAGE_LAST_META_KEY) || '{}'); } catch (_) { return {}; }
   }
@@ -277,188 +301,8 @@
     } catch (_) {}
   }
 
-  class CoderWorkspaceSettings extends HTMLElement {
-    constructor() {
-      super();
-      this.attachShadow({mode: 'open'});
-    }
-    connectedCallback() {
-      const current = loadConfig();
-      const style = `
-        :host { display:block; padding:16px; max-width:720px; }
-        h2 { margin:0 0 12px 0; font-size:16px; }
-        .row { display:flex; gap:12px; }
-        label { display:block; font-size:12px; color: var(--gray-700, #555); }
-        input, textarea { width:100%; box-sizing:border-box; }
-        textarea { min-height:120px; font-family: monospace; }
-        .actions { margin-top:12px; display:flex; gap:8px; justify-content:space-between; align-items:center; }
-        .grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-        .left-actions { display:flex; gap:8px; align-items:center; }
-        .right-actions { display:flex; gap:8px; align-items:center; }
-        .hint { font-size:12px; color: var(--gray-700, #555); }
-      `;
-      const mappingsJson = JSON.stringify(current.templateMappings || [], null, 2);
-      this.shadowRoot.innerHTML = `
-        <style>${style}</style>
-        <h2>Coder Workspace Settings</h2>
-        <div class="grid">
-          <div>
-            <label>Coder Server URL</label>
-            <input id="serverUrl" type="text" value="${escapeHtml(current.serverUrl || '')}" placeholder="https://coder.example.com" />
-          </div>
-          <div>
-            <label>API Key (Coder-Session-Token)</label>
-            <input id="apiKey" type="password" value="${escapeHtml(current.apiKey || '')}" />
-          </div>
-          <div>
-            <label>Organization ID (optional)</label>
-            <input id="organization" type="text" value="${escapeHtml(current.organization || '')}" />
-          </div>
-          <div>
-            <label>User (default: me)</label>
-            <input id="user" type="text" value="${escapeHtml(current.user || 'me')}" />
-          </div>
-          <div>
-            <label>Template ID (fallback)</label>
-            <input id="templateId" type="text" value="${escapeHtml(current.templateId || '')}" />
-          </div>
-          <div>
-            <label>Template Version ID (preferred)</label>
-            <input id="templateVersionId" type="text" value="${escapeHtml(current.templateVersionId || '')}" />
-          </div>
-          <div>
-            <label>Template Version Preset ID</label>
-            <input id="templateVersionPresetId" type="text" value="${escapeHtml(current.templateVersionPresetId || '')}" />
-          </div>
-          <div>
-            <label>Workspace Name Template (tokens: {repo},{branch},{change},{patchset})</label>
-            <input id="workspaceNameTemplate" type="text" value="${escapeHtml(current.workspaceNameTemplate || '{repo}-{change}-{patchset}')}" />
-          </div>
-          <div>
-            <label>Automatic Updates</label>
-            <input id="automaticUpdates" type="text" value="${escapeHtml(current.automaticUpdates || 'always')}" />
-          </div>
-          <div>
-            <label>Autostart (now)</label>
-            <input id="autostart" type="checkbox" ${current.autostart ? 'checked' : ''} />
-          </div>
-          <div>
-            <label>Open After Create</label>
-            <input id="openAfterCreate" type="checkbox" ${current.openAfterCreate !== false ? 'checked' : ''} />
-          </div>
-          <div>
-            <label>TTL (ms)</label>
-            <input id="ttlMs" type="number" value="${Number(current.ttlMs || 0)}" />
-          </div>
-          <div>
-            <label>History Retention (items per scope)</label>
-            <input id="historyLimit" type="number" value="${Number(current.historyLimit || 10)}" />
-          </div>
-          <div>
-            <label>Enable Dry-Run Preview (confirm request before creating)</label>
-            <input id="enableDryRunPreview" type="checkbox" ${current.enableDryRunPreview ? 'checked' : ''} />
-          </div>
-        </div>
-        <div style="margin-top:12px">
-          <label>Template Mappings (JSON array). Keys: repo, branch, templateId|templateVersionId, templateVersionPresetId, richParams</label>
-          <textarea id="templateMappings">${escapeHtml(mappingsJson)}</textarea>
-          <div id="mappingsError" class="hint" style="color: var(--error-text-color, #c00);"></div>
-        </div>
-        <div class="actions">
-          <div class="left-actions">
-            <gr-button id="test" role="button">Test Connection</gr-button>
-            <span id="testResult" class="hint"></span>
-          </div>
-          <div class="right-actions">
-            <gr-button id="history" role="button">Manage History</gr-button>
-            <gr-button id="cancel" role="button">Cancel</gr-button>
-            <gr-button id="save" primary role="button">Save</gr-button>
-          </div>
-        </div>
-      `;
-      this.shadowRoot.getElementById('cancel').addEventListener('click', () => this.close());
-      this.shadowRoot.getElementById('save').addEventListener('click', () => this.save());
-      this.shadowRoot.getElementById('test').addEventListener('click', () => this.testConnection());
-      this.shadowRoot.getElementById('templateMappings').addEventListener('input', () => this.liveValidate());
-      this.shadowRoot.getElementById('history').addEventListener('click', () => this.openHistory());
-    }
-    readValues() {
-      const $ = id => this.shadowRoot.getElementById(id);
-      const next = {
-        serverUrl: $('serverUrl').value.trim(),
-        apiKey: $('apiKey').value,
-        organization: $('organization').value.trim(),
-        user: $('user').value.trim() || 'me',
-        templateId: $('templateId').value.trim(),
-        templateVersionId: $('templateVersionId').value.trim(),
-        templateVersionPresetId: $('templateVersionPresetId').value.trim(),
-        workspaceNameTemplate: $('workspaceNameTemplate').value.trim() || '{repo}-{change}-{patchset}',
-        automaticUpdates: $('automaticUpdates').value.trim() || 'always',
-        autostart: $('autostart').checked,
-        openAfterCreate: $('openAfterCreate').checked,
-        ttlMs: Number($('ttlMs').value) || 0,
-        enableDryRunPreview: $('enableDryRunPreview').checked,
-        historyLimit: Math.max(1, Number($('historyLimit').value) || 10),
-      };
-      try {
-        const mappingsText = this.shadowRoot.getElementById('templateMappings').value;
-        const parsed = JSON.parse(mappingsText || '[]');
-        const v = validateMappingsSchema(parsed);
-        if (!v.valid) {
-          setMappingsError(this.shadowRoot, v.error);
-          throw new Error(v.error);
-        }
-        next.templateMappings = parsed;
-      } catch (e) {
-        throw new Error('Invalid Template Mappings JSON: ' + (e.message || String(e)));
-      }
-      return next;
-    }
-    save() {
-      try {
-        const next = this.readValues();
-        saveConfig(next);
-        this.dispatchEvent(new CustomEvent('coder-settings-saved', {bubbles: true, composed: true, detail: next}));
-        this.close();
-      } catch (e) {
-        // Simple inline error display
-        notify(null, e.message || String(e));
-      }
-    }
-    liveValidate() {
-      const textarea = this.shadowRoot.getElementById('templateMappings');
-      const text = textarea.value;
-      try {
-        const parsed = JSON.parse(text || '[]');
-        const v = validateMappingsSchema(parsed);
-        setMappingsError(this.shadowRoot, v.valid ? '' : v.error);
-      } catch (e) {
-        setMappingsError(this.shadowRoot, 'JSON parse error: ' + (e.message || String(e)));
-      }
-    }
-    async testConnection() {
-      const $ = id => this.shadowRoot.getElementById(id);
-      const status = $('testResult');
-      status.textContent = 'Testing...';
-      try {
-        const cfg = this.readValues();
-        const headers = { 'Accept': 'application/json' };
-        if (cfg.apiKey) headers['Coder-Session-Token'] = cfg.apiKey;
-        const base = (cfg.serverUrl || '').replace(/\/$/, '');
-        const url = cfg.organization
-          ? `${base}/api/v2/organizations/${encodeURIComponent(cfg.organization)}/members/${encodeURIComponent(cfg.user || 'me')}/workspaces?limit=1`
-          : `${base}/api/v2/workspaces?limit=1`;
-        const res = await fetch(url, { method: 'GET', headers });
-        status.textContent = res.ok ? 'OK' : `Failed (${res.status})`;
-      } catch (e) {
-        status.textContent = 'Error: ' + (e.message || String(e));
-      }
-    }
-    close() {
-      // plugin.popup host will handle removal; best-effort clean-up
-      this.remove();
-    }
-    async openHistory() {
+  // Simple in-page history viewer (not shown in menu by default)
+  async function openHistoryPanel() {
       const ctx = getChangeContextFromPage();
       const sections = [
         {label:'Global', listKey: STORAGE_LAST_LIST},
@@ -549,191 +393,191 @@
       panel.appendChild(container);
       document.body.appendChild(backdrop);
       document.body.appendChild(panel);
-    }
   }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   }
 
-  function loadConfig() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return Object.assign({}, config, JSON.parse(raw));
-    } catch (_) {}
-    return {...config};
-  }
-
-  function saveConfig(next) {
-    const merged = Object.assign({}, config, next || {});
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-    } catch (_) {}
-    config = merged;
-  }
+  // Configuration is loaded from server (/config/server/coder-workspace.config)
 
   function installPlugin(plugin) {
-    // Try to merge server-provided plugin config (if any). We don't rely on a
-    // stable API for plugin config, so this is best-effort only.
     console.log('[coder-workspace] Plugin installation starting...');
-    config = loadConfig();
-    console.log('[coder-workspace] Config loaded:', config);
+    // Fetch server-side configuration defined in gerrit.config
     if (plugin.restApi) {
-      plugin.restApi().get('/config/server/info').then(serverInfo => {
-        const p = serverInfo && serverInfo.plugin && serverInfo.plugin['coder-workspace'];
-        if (p) saveConfig(Object.assign({}, config, p));
-      }).catch(() => {});
+      plugin
+        .restApi()
+        .get('/config/server/coder-workspace.config')
+        .then((serverCfg) => {
+          if (serverCfg && typeof serverCfg === 'object') {
+            config = Object.assign({}, config, serverCfg);
+            console.log('[coder-workspace] Server config applied');
+          }
+        })
+        .catch((err) => {
+          console.warn('[coder-workspace] Failed to load server config', err);
+        });
     }
 
-    const changeActions = plugin.changeActions();
-    console.log('[coder-workspace] changeActions API:', changeActions);
-  const key = changeActions.add('revision', ACTION_LABEL);
-    console.log('[coder-workspace] Added revision action, key:', key);
-    changeActions.setActionOverflow('revision', key, true);
-    if (changeActions.setIcon) changeActions.setIcon(key, 'rocket_launch');
-    changeActions.setTitle(key, 'Create a Coder workspace for this change/patchset');
-
-    changeActions.addTapListener(key, async () => {
+    let actionsInstalled = false;
+    const installActions = () => {
+      if (actionsInstalled) return true;
       try {
-        const ctx = getChangeContextFromPage();
-        const body = buildCreateRequest(ctx);
-        if (config.enableDryRunPreview) {
-          const {confirmed} = await previewAndConfirm(plugin, body);
-          if (!confirmed) return;
-        }
-  const ws = await createWorkspace(body);
-        notify(plugin, 'Coder workspace created');
-        const lastUrl = computeWorkspaceUrl(ws);
-        const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset};
-  saveLastWorkspaceUrl(lastUrl, meta);
-  saveLastWorkspaceUrlForContext(ctx, lastUrl, meta);
-  saveLastWorkspaceUrlForChange(ctx, lastUrl, meta);
-        saveLastMeta(meta);
-        saveLastMetaForContext(ctx, meta);
-        if (openLastKey) try { changeActions.setEnabled(openLastKey, true); } catch(_){}
-        if (openLastContextKey) try { changeActions.setEnabled(openLastContextKey, true); } catch(_){}
-        if (openLastChangeKey) try { changeActions.setEnabled(openLastChangeKey, true); } catch(_){}
-        if (config.openAfterCreate) openWorkspace(ws);
+        const changeActions = plugin.changeActions();
+        if (!changeActions) return false;
+
+        // Add revision-level action
+        const key = changeActions.add('revision', ACTION_LABEL);
+        changeActions.setActionOverflow('revision', key, true);
+        // Push to bottom and ensure order: Create (9997)
+        if (changeActions.setActionPriority) changeActions.setActionPriority('revision', key, 9997);
+        if (changeActions.setIcon) changeActions.setIcon(key, 'rocket_launch');
+        changeActions.setTitle(key, 'Create a Coder workspace for this change/patchset');
+
+        changeActions.addTapListener(key, async () => {
+          try {
+            if (!config.serverUrl) {
+              notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty). Please ask an administrator to set [plugin "coder-workspace"] in gerrit.config.');
+              return;
+            }
+            const ctx = getChangeContextFromPage();
+            const body = buildCreateRequest(ctx);
+            if (config.enableDryRunPreview) {
+              const {confirmed} = await previewAndConfirm(plugin, body);
+              if (!confirmed) return;
+            }
+            const ws = await createWorkspace(body);
+            notify(plugin, 'Coder workspace created');
+            const lastUrl = computeWorkspaceUrl(ws);
+            const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
+            saveLastWorkspaceUrl(lastUrl, meta);
+            saveLastWorkspaceUrlForContext(ctx, lastUrl, meta);
+            saveLastWorkspaceUrlForChange(ctx, lastUrl, meta);
+            saveLastMeta(meta);
+            saveLastMetaForContext(ctx, meta);
+            // No need to (re-)enable the Open action; it's always available now
+            if (config.openAfterCreate) openWorkspace(ws);
+          } catch (e) {
+            const msg = e && e.message ? e.message : String(e);
+            notify(plugin, 'Failed to create Coder workspace: ' + msg);
+            // eslint-disable-next-line no-console
+            console.error('[coder-workspace] create failed', e);
+          }
+        });
+
+        // Note: We intentionally do NOT add the Create action to the CHANGE menu
+        // to avoid duplicate entries in the overflow menu in some Gerrit versions.
+
+        // Open last actions (initialized once)
+        var openLastKey = changeActions.add('revision', OPEN_LAST_ACTION_LABEL);
+        changeActions.setActionOverflow('revision', openLastKey, true);
+        // Then Open (9998)
+        if (changeActions.setActionPriority) changeActions.setActionPriority('revision', openLastKey, 9998);
+        changeActions.setTitle(openLastKey, 'Open your Coder workspace, creating one if necessary');
+        changeActions.addTapListener(openLastKey, async () => {
+          try {
+            let url = loadLastWorkspaceUrl();
+            if (url) {
+              const meta = loadLastMeta();
+              if (meta && (meta.repo || meta.branch)) {
+                notify(plugin, `Opening Coder workspace for ${meta.repo || '?'} @ ${meta.branch || '?'}`);
+              }
+              window.open(url, '_blank', 'noopener');
+              return;
+            }
+            // No existing URL recorded: create one now using current change context
+            if (!config.serverUrl) {
+              notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty). Please ask an administrator to set [plugin "coder-workspace"] in gerrit.config.');
+              return;
+            }
+            const ctx = getChangeContextFromPage();
+            const body = buildCreateRequest(ctx);
+            if (config.enableDryRunPreview) {
+              const {confirmed} = await previewAndConfirm(plugin, body);
+              if (!confirmed) return;
+            }
+            const ws = await createWorkspace(body);
+            notify(plugin, 'Coder workspace created');
+            const createdUrl = computeWorkspaceUrl(ws);
+            const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
+            saveLastWorkspaceUrl(createdUrl, meta);
+            saveLastWorkspaceUrlForContext(ctx, createdUrl, meta);
+            saveLastWorkspaceUrlForChange(ctx, createdUrl, meta);
+            saveLastMeta(meta);
+            saveLastMetaForContext(ctx, meta);
+            window.open(createdUrl, '_blank', 'noopener');
+          } catch (e) {
+            const msg = e && e.message ? e.message : String(e);
+            notify(plugin, 'Failed to open/create Coder workspace: ' + msg);
+            // eslint-disable-next-line no-console
+            console.error('[coder-workspace] open/create failed', e);
+          }
+        });
+
+        // Delete Coder Workspace action
+        const deleteKey = changeActions.add('revision', DELETE_ACTION_LABEL);
+        changeActions.setActionOverflow('revision', deleteKey, true);
+        // Finally Delete (9999)
+        if (changeActions.setActionPriority) changeActions.setActionPriority('revision', deleteKey, 9999);
+        changeActions.setTitle(deleteKey, 'Delete your Coder workspace and clear saved link');
+        changeActions.addTapListener(deleteKey, async () => {
+          try {
+            if (!config.serverUrl) {
+              notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty).');
+              return;
+            }
+            const meta = loadLastMeta();
+            const name = meta && meta.workspaceName;
+            if (!name) {
+              notify(plugin, 'No workspace found to delete. Create/open one first.');
+              return;
+            }
+            // Confirm deletion
+            // eslint-disable-next-line no-alert
+            const ok = window.confirm(`Delete Coder workspace "${name}"?`);
+            if (!ok) return;
+            await deleteWorkspaceByName(name);
+            notify(plugin, 'Coder workspace deleted');
+            // Clear saved global URL and meta
+            try { localStorage.removeItem(STORAGE_LAST_KEY); } catch(_){}
+            saveLastMeta({});
+          } catch (e) {
+            const msg = e && e.message ? e.message : String(e);
+            notify(plugin, 'Failed to delete Coder workspace: ' + msg);
+            // eslint-disable-next-line no-console
+            console.error('[coder-workspace] delete failed', e);
+          }
+        });
+
+        // Context-specific "Open Last" actions removed per request
+
+        actionsInstalled = true;
+        return true;
       } catch (e) {
-        const msg = e && e.message ? e.message : String(e);
-        notify(plugin, 'Failed to create Coder workspace: ' + msg);
         // eslint-disable-next-line no-console
-        console.error('[coder-workspace] create failed', e);
+        console.warn('[coder-workspace] Failed to install actions (retry later)', e);
+        return false;
       }
-    });
+    };
 
-    // Also add the Create action to the CHANGE menu (same handler), so it appears alongside items like 'Move change'.
-    console.log('[coder-workspace] Adding CHANGE-level action...');
-    const changeMenuKey = changeActions.add('change', ACTION_LABEL);
-    console.log('[coder-workspace] Added change action, key:', changeMenuKey);
-    changeActions.setActionOverflow('change', changeMenuKey, true);
-    if (changeActions.setIcon) changeActions.setIcon(changeMenuKey, 'rocket_launch');
-    changeActions.setTitle(changeMenuKey, 'Create a Coder workspace for this change/patchset');
-    console.log('[coder-workspace] Change action configured');
-    changeActions.addTapListener(changeMenuKey, async () => {
-      try {
-        const ctx = getChangeContextFromPage();
-        const body = buildCreateRequest(ctx);
-        if (config.enableDryRunPreview) {
-          const {confirmed} = await previewAndConfirm(plugin, body);
-          if (!confirmed) return;
-        }
-        const ws = await createWorkspace(body);
-        notify(plugin, 'Coder workspace created');
-        const lastUrl = computeWorkspaceUrl(ws);
-        const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset};
-        saveLastWorkspaceUrl(lastUrl, meta);
-        saveLastWorkspaceUrlForContext(ctx, lastUrl, meta);
-        saveLastWorkspaceUrlForChange(ctx, lastUrl, meta);
-        saveLastMeta(meta);
-        saveLastMetaForContext(ctx, meta);
-  if (openLastKey) try { changeActions.setEnabled(openLastKey, true); } catch(_){ }
-  if (openLastContextKey) try { changeActions.setEnabled(openLastContextKey, true); } catch(_){ }
-  if (openLastChangeKey) try { changeActions.setEnabled(openLastChangeKey, true); } catch(_){ }
-        if (config.openAfterCreate) openWorkspace(ws);
-      } catch (e) {
-        const msg = e && e.message ? e.message : String(e);
-        notify(plugin, 'Failed to create Coder workspace: ' + msg);
-        // eslint-disable-next-line no-console
-        console.error('[coder-workspace] create failed', e);
-      }
-    });
-
-    // Settings action
-  const settingsKey = changeActions.add('revision', SETTINGS_ACTION_LABEL);
-    changeActions.setActionOverflow('revision', settingsKey, true);
-    changeActions.setTitle(settingsKey, 'Configure Coder server and template mappings');
-    // Also expose Settings in the CHANGE menu for discoverability
-    console.log('[coder-workspace] Adding Settings to CHANGE menu...');
-    const changeSettingsKey = changeActions.add('change', SETTINGS_ACTION_LABEL);
-    console.log('[coder-workspace] Added change settings action, key:', changeSettingsKey);
-    changeActions.setActionOverflow('change', changeSettingsKey, true);
-    changeActions.setTitle(changeSettingsKey, 'Configure Coder server and template mappings');
-    console.log('[coder-workspace] Change settings action configured');
-    changeActions.addTapListener(changeSettingsKey, async () => {
-      if (!customElements.get('coder-workspace-settings')) {
-        customElements.define('coder-workspace-settings', CoderWorkspaceSettings);
-      }
-      const el = await plugin.popup('coder-workspace-settings', {});
-      el.addEventListener('coder-settings-saved', (e) => {
-        config = loadConfig();
+    // Defer installing actions until revision actions are shown so the API is ready
+    try {
+      plugin.on('show-revision-actions', () => {
+        installActions();
       });
-    });
-    changeActions.addTapListener(settingsKey, async () => {
-      if (!customElements.get('coder-workspace-settings')) {
-        customElements.define('coder-workspace-settings', CoderWorkspaceSettings);
-      }
-      const el = await plugin.popup('coder-workspace-settings', {});
-      el.addEventListener('coder-settings-saved', (e) => {
-        // Already saved via saveConfig called in element; reload from storage for safety
-        config = loadConfig();
-      });
-    });
+    } catch (e) {
+      // ignore
+    }
+    // Fallback retry loop for robustness
+    let tries = 0;
+    const t = setInterval(() => {
+      if (installActions()) { clearInterval(t); }
+      if (++tries > 20) clearInterval(t);
+    }, 300);
 
-    // Open last workspace (global) action
-    const openLastUrl = loadLastWorkspaceUrl();
-    var openLastKey = changeActions.add('revision', OPEN_LAST_ACTION_LABEL);
-    changeActions.setActionOverflow('revision', openLastKey, true);
-    changeActions.setTitle(openLastKey, 'Open previously created Coder workspace in a new tab');
-    try { changeActions.setEnabled(openLastKey, !!openLastUrl); } catch(_){}
-    changeActions.addTapListener(openLastKey, () => {
-      const url = loadLastWorkspaceUrl();
-      if (!url) { notify(plugin, 'No recent Coder workspace link found'); return; }
-      const meta = loadLastMeta();
-      if (meta && (meta.repo || meta.branch)) {
-        notify(plugin, `Opening last Coder workspace for ${meta.repo || '?'} @ ${meta.branch || '?'}`);
-      }
-      window.open(url, '_blank', 'noopener');
-    });
+    // No Settings actions; configuration is server-managed.
 
-    // Open last workspace (this repo/branch) action
-    const currentCtx = getChangeContextFromPage();
-    const openLastCtxUrl = loadLastWorkspaceUrlForContext(currentCtx);
-    var openLastContextKey = changeActions.add('revision', OPEN_LAST_CONTEXT_ACTION_LABEL);
-    changeActions.setActionOverflow('revision', openLastContextKey, true);
-    changeActions.setTitle(openLastContextKey, 'Open last Coder workspace for this repository and branch');
-    try { changeActions.setEnabled(openLastContextKey, !!openLastCtxUrl); } catch(_){}
-    changeActions.addTapListener(openLastContextKey, () => {
-      const ctx = getChangeContextFromPage();
-      const url = loadLastWorkspaceUrlForContext(ctx);
-      if (!url) { notify(plugin, 'No Coder workspace link found for this repo/branch'); return; }
-      notify(plugin, `Opening last Coder workspace for ${ctx.repo} @ ${ctx.branch}`);
-      window.open(url, '_blank', 'noopener');
-    });
-
-    // Open last workspace (this change/patchset) action
-    const openLastChangeUrl = loadLastWorkspaceUrlForChange(currentCtx);
-    var openLastChangeKey = changeActions.add('revision', OPEN_LAST_CHANGE_ACTION_LABEL);
-    changeActions.setActionOverflow('revision', openLastChangeKey, true);
-    changeActions.setTitle(openLastChangeKey, 'Open last Coder workspace for this change and patchset');
-    try { changeActions.setEnabled(openLastChangeKey, !!openLastChangeUrl); } catch(_){}
-    changeActions.addTapListener(openLastChangeKey, () => {
-      const ctx = getChangeContextFromPage();
-      const url = loadLastWorkspaceUrlForChange(ctx);
-      if (!url) { notify(plugin, 'No Coder workspace link found for this change/patchset'); return; }
-      notify(plugin, `Opening last Coder workspace for change ${ctx.change} patchset ${ctx.patchset}`);
-      window.open(url, '_blank', 'noopener');
-    });
+    // Note: Open Last actions are configured in installActions() once.
   }
 
   async function previewAndConfirm(plugin, requestBody) {

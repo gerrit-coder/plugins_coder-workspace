@@ -8,20 +8,17 @@ via rich parameters.
 ## Features
 
 - Create a Coder workspace from the current change/patchset, passing repo, branch, change and patchset via rich parameters
-- Settings UI (per-user, stored in browser localStorage)
+- Admin-only configuration via gerrit.config (no per-user Settings menu)
 - Optional per-repo/branch template mappings with glob support
 - Workspace name templating using tokens: `{repo}`, `{branch}`, `{change}`, `{patchset}`
-- Test Connection button to quickly verify server and auth
-- Optional Dry-Run Preview to confirm the request URL and payload before creating
-- "Open Last Coder Workspace" actions:
-	- Global last
-	- Last for this repo/branch
-	- Last for this change/patchset
-- Bounded history with retention limit per scope and a Manage History panel
+- Optional Dry-Run Preview (admin-controlled) to confirm the request URL and payload before creating
+- "Open Coder Workspace" action (open or create-on-demand)
+- "Delete Coder Workspace" action
+- Bounded history with retention limit per scope (admin-controlled)
 
 ## Configure
 
-Add to `gerrit.config`:
+Add to `gerrit.config` (example):
 
 ```
 [plugin "coder-workspace"]
@@ -35,21 +32,31 @@ Add to `gerrit.config`:
   autostart = true
   automaticUpdates = always
   openAfterCreate = true
+  enableDryRunPreview = false
+  ttlMs = 0
+  historyLimit = 10
   # Map Gerrit fields to template parameter names (optional)
   richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
+
+  # Optional per-repo/branch template overrides (JSON string)
+  templateMappingsJson = [
+    {"repo":"my/org/*","branch":"refs/heads/main","templateVersionId":"0ba39c92-1f1b-4c32-aa3e-9925d7713eb1","templateVersionPresetId":"512a53a7-30da-446e-a1fc-713c630baff1"},
+    {"repo":"another/repo","branch":"refs/heads/*","templateId":"c6d67e98-83ea-49f0-8812-e4abae2b68bc"}
+  ]
 ```
 
-## Settings UI
+## Configuration source
 
-Open any change page, then from the overflow actions select "Coder Settings".
+This plugin reads its configuration from Gerrit's `gerrit.config` under `[plugin "coder-workspace"]`.
+There is no per-user Settings menu in the UI.
+
 You can configure:
 - Coder Server URL, API Key (Coder-Session-Token), Organization, User
 - Default Template ID or Template Version ID (+ optional Preset ID)
 - Automatic updates, autostart, TTL, open-after-create
 - Workspace Name Template (tokens: {repo},{branch},{change},{patchset})
-- Template Mappings JSON (per-repo/branch overrides below)
- - Enable Dry-Run Preview (confirm before creating)
- - History Retention (items per scope) and Manage History
+- Template Mappings (JSON) via `templateMappingsJson`
+- Rich parameter mapping via `richParams`
 
 ### Template Mappings JSON format
 
@@ -81,37 +88,26 @@ An array of objects. First match wins. `repo` and `branch` accept `*` wildcards.
 
 If a mapping provides `richParams`, it overrides the default parameter mapping for that repo/branch match only.
 
-### Test Connection
+### Notes on defaults
 
-The settings dialog has a "Test Connection" button that performs a GET request to
-`/api/v2/workspaces?limit=1` (or the org-scoped equivalent) with the configured
-server URL and token. This helps validate reachability and authentication.
+- On the change page, the "Create Coder Workspace" action defaults to the latest patchset if none is selected.
+- The plugin passes repo, branch, change, patchset and change URL as rich parameters by default (configurable).
 
-### Manage History
+### History
 
-Click "Manage History" in the settings dialog to view and manage recent workspace links in three scopes:
+The plugin records the last created workspace links in your browser (localStorage) to enable quick "Open Last" actions. Retention can be tuned via `historyLimit` in `gerrit.config`.
 
-- Global: all workspaces you created via the plugin
-- Current Repo/Branch: workspaces created for the current repository and branch
-- Current Change/Patchset: workspaces created for the specific change and patchset
+### "Open Coder Workspace" action
 
-From this panel you can:
+The plugin adds one convenience action in the change page overflow menu:
 
-- Adjust the retention limit (number of items kept per scope) and Apply to prune existing lists
-- Clear each scope
-- Inspect timestamps, context, and URLs of recorded entries
+- "Open Coder Workspace": Opens your Coder workspace if one exists, otherwise creates it using the current change context (repo/branch/change/patchset) and then opens it.
 
-Note: History is stored only in your browser’s localStorage and is per-user/per-browser.
+This action is always available. A short toast indicates the context when opening/creating.
 
-### "Open Last" actions
+### "Delete Coder Workspace" action
 
-The plugin adds three convenience actions in the change page overflow menu:
-
-- "Open Last Coder Workspace": Opens the most recent workspace URL recorded
-- "Open Last Coder Workspace (This Repo/Branch)": Opens the last workspace URL for the current repo and branch
-- "Open Last Coder Workspace (This Change/Patchset)": Opens the last workspace URL for the specific change and patchset
-
-These actions are enabled once a corresponding URL is recorded by a successful create. A short toast indicates the context when opening.
+Deletes your Coder workspace and clears the saved link in the browser. You will be asked to confirm the deletion.
 
 ### Mock server (optional)
 
@@ -199,4 +195,4 @@ Deploy the resulting jar to `$GERRIT_SITE/plugins/` and restart Gerrit.
 5. **Verify** the plugin loaded:
    - Check browser console for `[coder-workspace]` debug logs when loading a change page
    - Visit `http://your-gerrit-server/plugins/` to see if `coder-workspace` is listed
-   - Open a change page and look for "Create Coder Workspace" and "Coder Settings" in the three-dot overflow menu
+  - Open a change page and look for "Create Coder Workspace" in the three-dot overflow menu
