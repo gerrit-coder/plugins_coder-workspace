@@ -13,8 +13,12 @@ gerrit_js_bundle(
 
 gerrit_plugin(
     name = "coder-workspace",
-    # Add a minimal Java source to satisfy java_library rule when deps are present.
-    srcs = ["Dummy.java"],
+    srcs = ["java/com/gerritforge/gerrit/plugins/coderworkspace/Module.java"],
+    manifest_entries = [
+        "Gerrit-PluginName: coder-workspace",
+        "Gerrit-Module: com.gerritforge.gerrit.plugins.coderworkspace.Module",
+        "Implementation-Title: Coder Workspace Integration Plugin",
+        "Implementation-Vendor: Gerrit Community",
+    ],
     resource_jars = [":coder-workspace-static"],
-    # No server-side Java code for this plugin
 )

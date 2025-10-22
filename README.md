@@ -128,7 +128,7 @@ cd gerrit
 
 ## Install Bazel on Ubuntu
 
-This repo pins Bazel to `7.6.1` via the top-level `.bazelversion` file. The easiest way to match that on Ubuntu (including WSL) is Bazelisk.
+This repo pins Bazel to `7.6.1` via the top-level `.bazelversion` file. The easiest way to match that on Ubuntu is Bazelisk.
 
 Bazelisk auto-downloads the correct Bazel version based on `.bazelversion`.
 
@@ -169,3 +169,34 @@ bazel build plugins/coder-workspace:coder-workspace
 ```
 
 Deploy the resulting jar to `$GERRIT_SITE/plugins/` and restart Gerrit.
+
+## Deploy & Enable
+
+1. **Copy the JAR** to your Gerrit site's plugins directory:
+   ```bash
+   cp bazel-bin/plugins/coder-workspace/coder-workspace.jar $GERRIT_SITE/plugins/
+   ```
+
+2. **Enable the plugin** in `$GERRIT_SITE/etc/gerrit.config`:
+   ```ini
+   [plugins]
+     allowRemoteAdmin = true
+
+   [plugin "coder-workspace"]
+     enabled = true
+   ```
+
+3. **Restart Gerrit**:
+   ```bash
+   $GERRIT_SITE/bin/gerrit.sh restart
+   ```
+
+4. **Clear browser cache** and reload:
+   - **Chrome/Edge**: Press `Ctrl+Shift+Delete`, select "Cached images and files", click "Clear data"
+   - **Firefox**: Press `Ctrl+Shift+Delete`, select "Cache", click "Clear Now"
+   - **Or do a hard refresh**: Press `Ctrl+F5` (Windows/Linux) or `Cmd+Shift+R` (Mac)
+
+5. **Verify** the plugin loaded:
+   - Check browser console for `[coder-workspace]` debug logs when loading a change page
+   - Visit `http://your-gerrit-server/plugins/` to see if `coder-workspace` is listed
+   - Open a change page and look for "Create Coder Workspace" and "Coder Settings" in the three-dot overflow menu

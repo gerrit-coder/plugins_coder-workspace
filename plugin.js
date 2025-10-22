@@ -575,14 +575,20 @@
   function installPlugin(plugin) {
     // Try to merge server-provided plugin config (if any). We don't rely on a
     // stable API for plugin config, so this is best-effort only.
+    console.log('[coder-workspace] Plugin installation starting...');
     config = loadConfig();
-    (plugin.restApi && plugin.restApi().get('/config/server/info').then(serverInfo => {
-      const p = serverInfo && serverInfo.plugin && serverInfo.plugin['coder-workspace'];
-      if (p) saveConfig(Object.assign({}, config, p));
-    }).catch(() => {}));
+    console.log('[coder-workspace] Config loaded:', config);
+    if (plugin.restApi) {
+      plugin.restApi().get('/config/server/info').then(serverInfo => {
+        const p = serverInfo && serverInfo.plugin && serverInfo.plugin['coder-workspace'];
+        if (p) saveConfig(Object.assign({}, config, p));
+      }).catch(() => {});
+    }
 
     const changeActions = plugin.changeActions();
+    console.log('[coder-workspace] changeActions API:', changeActions);
   const key = changeActions.add('revision', ACTION_LABEL);
+    console.log('[coder-workspace] Added revision action, key:', key);
     changeActions.setActionOverflow('revision', key, true);
     if (changeActions.setIcon) changeActions.setIcon(key, 'rocket_launch');
     changeActions.setTitle(key, 'Create a Coder workspace for this change/patchset');
@@ -616,10 +622,63 @@
       }
     });
 
+    // Also add the Create action to the CHANGE menu (same handler), so it appears alongside items like 'Move change'.
+    console.log('[coder-workspace] Adding CHANGE-level action...');
+    const changeMenuKey = changeActions.add('change', ACTION_LABEL);
+    console.log('[coder-workspace] Added change action, key:', changeMenuKey);
+    changeActions.setActionOverflow('change', changeMenuKey, true);
+    if (changeActions.setIcon) changeActions.setIcon(changeMenuKey, 'rocket_launch');
+    changeActions.setTitle(changeMenuKey, 'Create a Coder workspace for this change/patchset');
+    console.log('[coder-workspace] Change action configured');
+    changeActions.addTapListener(changeMenuKey, async () => {
+      try {
+        const ctx = getChangeContextFromPage();
+        const body = buildCreateRequest(ctx);
+        if (config.enableDryRunPreview) {
+          const {confirmed} = await previewAndConfirm(plugin, body);
+          if (!confirmed) return;
+        }
+        const ws = await createWorkspace(body);
+        notify(plugin, 'Coder workspace created');
+        const lastUrl = computeWorkspaceUrl(ws);
+        const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset};
+        saveLastWorkspaceUrl(lastUrl, meta);
+        saveLastWorkspaceUrlForContext(ctx, lastUrl, meta);
+        saveLastWorkspaceUrlForChange(ctx, lastUrl, meta);
+        saveLastMeta(meta);
+        saveLastMetaForContext(ctx, meta);
+  if (openLastKey) try { changeActions.setEnabled(openLastKey, true); } catch(_){ }
+  if (openLastContextKey) try { changeActions.setEnabled(openLastContextKey, true); } catch(_){ }
+  if (openLastChangeKey) try { changeActions.setEnabled(openLastChangeKey, true); } catch(_){ }
+        if (config.openAfterCreate) openWorkspace(ws);
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        notify(plugin, 'Failed to create Coder workspace: ' + msg);
+        // eslint-disable-next-line no-console
+        console.error('[coder-workspace] create failed', e);
+      }
+    });
+
     // Settings action
-    const settingsKey = changeActions.add('revision', SETTINGS_ACTION_LABEL);
+  const settingsKey = changeActions.add('revision', SETTINGS_ACTION_LABEL);
     changeActions.setActionOverflow('revision', settingsKey, true);
     changeActions.setTitle(settingsKey, 'Configure Coder server and template mappings');
+    // Also expose Settings in the CHANGE menu for discoverability
+    console.log('[coder-workspace] Adding Settings to CHANGE menu...');
+    const changeSettingsKey = changeActions.add('change', SETTINGS_ACTION_LABEL);
+    console.log('[coder-workspace] Added change settings action, key:', changeSettingsKey);
+    changeActions.setActionOverflow('change', changeSettingsKey, true);
+    changeActions.setTitle(changeSettingsKey, 'Configure Coder server and template mappings');
+    console.log('[coder-workspace] Change settings action configured');
+    changeActions.addTapListener(changeSettingsKey, async () => {
+      if (!customElements.get('coder-workspace-settings')) {
+        customElements.define('coder-workspace-settings', CoderWorkspaceSettings);
+      }
+      const el = await plugin.popup('coder-workspace-settings', {});
+      el.addEventListener('coder-settings-saved', (e) => {
+        config = loadConfig();
+      });
+    });
     changeActions.addTapListener(settingsKey, async () => {
       if (!customElements.get('coder-workspace-settings')) {
         customElements.define('coder-workspace-settings', CoderWorkspaceSettings);
@@ -747,11 +806,15 @@
     return {valid:true};
   }
 
+  console.log('[coder-workspace] Plugin loaded, registering with Gerrit...');
   if (window && window.Gerrit && window.Gerrit.install) {
-    window.Gerrit.install(installPlugin, PLUGIN_NAME);
+    console.log('[coder-workspace] Gerrit.install available, installing immediately');
+    window.Gerrit.install(installPlugin);
   } else {
+    console.log('[coder-workspace] Waiting for WebComponentsReady event...');
     window.addEventListener('WebComponentsReady', () => {
-      window.Gerrit.install(installPlugin, PLUGIN_NAME);
+      console.log('[coder-workspace] WebComponentsReady fired, installing plugin');
+      window.Gerrit.install(installPlugin);
     });
   }
 })();
