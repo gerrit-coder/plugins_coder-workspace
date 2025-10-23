@@ -1,13 +1,15 @@
 # Coder Workspace Gerrit Plugin
 
-Adds a "Create Coder Workspace" action to the Gerrit change page (revision actions).
-When clicked, it creates a Coder workspace using the Coder REST API and injects
-Gerrit context such as repo, branch, change number and patchset into the template
-via rich parameters.
+Adds an "Open Coder Workspace" action to the Gerrit change page (revision actions).
+When clicked, it opens your Coder workspace for the current change; if no workspace
+exists for the repo/branch/patchset, the plugin creates one using the Coder REST API
+and injects Gerrit context (repo, branch, change, patchset) into the template via
+rich parameters.
 
 ## Features
 
-- Create a Coder workspace from the current change/patchset, passing repo, branch, change and patchset via rich parameters
+- Open or create-on-demand a Coder workspace for the current change/patchset, passing repo, branch, change and patchset via rich parameters
+- Reuse existing workspace when possible: before creating, the plugin tries to open a workspace that matches the expected name for the current context
 - Admin-only configuration via gerrit.config (no per-user Settings menu)
 - Optional per-repo/branch template mappings with glob support
 - Workspace name templating using tokens: `{repo}`, `{branch}`, `{change}`, `{patchset}`
@@ -90,7 +92,7 @@ If a mapping provides `richParams`, it overrides the default parameter mapping f
 
 ### Notes on defaults
 
-- On the change page, the "Create Coder Workspace" action defaults to the latest patchset if none is selected.
+- On the change page, the "Open Coder Workspace" action targets the latest patchset if none is selected.
 - The plugin passes repo, branch, change, patchset and change URL as rich parameters by default (configurable).
 
 ### History
@@ -101,7 +103,7 @@ The plugin records the last created workspace links in your browser (localStorag
 
 The plugin adds one convenience action in the change page overflow menu:
 
-- "Open Coder Workspace": Opens your Coder workspace if one exists, otherwise creates it using the current change context (repo/branch/change/patchset) and then opens it.
+- "Open Coder Workspace": Opens your Coder workspace for the current change/patchset. If no workspace is recorded for this repo/branch/patchset, the plugin first attempts to find an existing workspace by the expected name (based on your name template and mappings). If none exists, it is created on-demand and then opened.
 
 This action is always available. A short toast indicates the context when opening/creating.
 
@@ -195,4 +197,4 @@ Deploy the resulting jar to `$GERRIT_SITE/plugins/` and restart Gerrit.
 5. **Verify** the plugin loaded:
    - Check browser console for `[coder-workspace]` debug logs when loading a change page
    - Visit `http://your-gerrit-server/plugins/` to see if `coder-workspace` is listed
-  - Open a change page and look for "Create Coder Workspace" in the three-dot overflow menu
+  - Open a change page and look for "Open Coder Workspace" in the three-dot overflow menu

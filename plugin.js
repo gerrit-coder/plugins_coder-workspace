@@ -4,7 +4,6 @@
 
 (function () {
   const PLUGIN_NAME = 'coder-workspace';
-  const ACTION_LABEL = 'Create Coder Workspace';
   const OPEN_LAST_ACTION_LABEL = 'Open Coder Workspace';
   const DELETE_ACTION_LABEL = 'Delete Coder Workspace';
   // Only keep global "Open Last" action
@@ -120,6 +119,7 @@
           templateId: m.templateId || '',
           templateVersionId: m.templateVersionId || '',
           templateVersionPresetId: m.templateVersionPresetId || '',
+          workspaceNameTemplate: m.workspaceNameTemplate || '',
           richParams: m.richParams,
         };
       }
@@ -171,6 +171,24 @@
       url = resolveCoderUrl(`/api/v2/users/${encodeURIComponent(config.user || 'me')}/workspaces`);
     }
     const res = await fetch(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Coder API error ${res.status}: ${text}`);
+    }
+    return res.json();
+  }
+
+  async function getWorkspaceByName(workspaceName) {
+    const headers = {'Accept': 'application/json'};
+    if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
+    const base = (config.serverUrl || '').replace(/\/$/, '');
+    const userSeg = encodeURIComponent(config.user || 'me');
+    const nameSeg = encodeURIComponent(workspaceName);
+    const url = config.organization
+      ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
+      : `${base}/api/v2/users/${userSeg}/workspaces/${nameSeg}`;
+    const res = await fetch(url, { method: 'GET', headers });
+    if (res.status === 404) return null;
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Coder API error ${res.status}: ${text}`);
@@ -426,47 +444,7 @@
         const changeActions = plugin.changeActions();
         if (!changeActions) return false;
 
-        // Add revision-level action
-        const key = changeActions.add('revision', ACTION_LABEL);
-        changeActions.setActionOverflow('revision', key, true);
-        // Push to bottom and ensure order: Create (9997)
-        if (changeActions.setActionPriority) changeActions.setActionPriority('revision', key, 9997);
-        if (changeActions.setIcon) changeActions.setIcon(key, 'rocket_launch');
-        changeActions.setTitle(key, 'Create a Coder workspace for this change/patchset');
-
-        changeActions.addTapListener(key, async () => {
-          try {
-            if (!config.serverUrl) {
-              notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty). Please ask an administrator to set [plugin "coder-workspace"] in gerrit.config.');
-              return;
-            }
-            const ctx = getChangeContextFromPage();
-            const body = buildCreateRequest(ctx);
-            if (config.enableDryRunPreview) {
-              const {confirmed} = await previewAndConfirm(plugin, body);
-              if (!confirmed) return;
-            }
-            const ws = await createWorkspace(body);
-            notify(plugin, 'Coder workspace created');
-            const lastUrl = computeWorkspaceUrl(ws);
-            const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
-            saveLastWorkspaceUrl(lastUrl, meta);
-            saveLastWorkspaceUrlForContext(ctx, lastUrl, meta);
-            saveLastWorkspaceUrlForChange(ctx, lastUrl, meta);
-            saveLastMeta(meta);
-            saveLastMetaForContext(ctx, meta);
-            // No need to (re-)enable the Open action; it's always available now
-            if (config.openAfterCreate) openWorkspace(ws);
-          } catch (e) {
-            const msg = e && e.message ? e.message : String(e);
-            notify(plugin, 'Failed to create Coder workspace: ' + msg);
-            // eslint-disable-next-line no-console
-            console.error('[coder-workspace] create failed', e);
-          }
-        });
-
-        // Note: We intentionally do NOT add the Create action to the CHANGE menu
-        // to avoid duplicate entries in the overflow menu in some Gerrit versions.
+        // Per request, remove explicit "Create Coder Workspace" action from the dropdown.
 
         // Open last actions (initialized once)
         var openLastKey = changeActions.add('revision', OPEN_LAST_ACTION_LABEL);
@@ -476,22 +454,44 @@
         changeActions.setTitle(openLastKey, 'Open your Coder workspace, creating one if necessary');
         changeActions.addTapListener(openLastKey, async () => {
           try {
-            let url = loadLastWorkspaceUrl();
+            // Prefer workspace associated with current change and patchset.
+            const ctx = getChangeContextFromPage();
+            let url = loadLastWorkspaceUrlForChange(ctx);
+            let existingMeta = url ? loadLastMetaForContext(ctx) : null; // change-level meta saved via saveLastWorkspaceUrlForChange
             if (url) {
-              const meta = loadLastMeta();
-              if (meta && (meta.repo || meta.branch)) {
-                notify(plugin, `Opening Coder workspace for ${meta.repo || '?'} @ ${meta.branch || '?'}`);
+              if (existingMeta && (existingMeta.repo || existingMeta.branch)) {
+                notify(plugin, `Opening Coder workspace for ${existingMeta.repo || '?'} @ ${existingMeta.branch || '?'}`);
               }
               window.open(url, '_blank', 'noopener');
               return;
             }
-            // No existing URL recorded: create one now using current change context
+            // No existing URL recorded for this repo/branch/patchset: try to find an existing workspace by the expected name; otherwise create one
             if (!config.serverUrl) {
               notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty). Please ask an administrator to set [plugin "coder-workspace"] in gerrit.config.');
               return;
             }
-            const ctx = getChangeContextFromPage();
             const body = buildCreateRequest(ctx);
+            try {
+              // Attempt to re-use existing workspace with the expected name (idempotence)
+              const expectedName = body && body.name ? body.name : renderNameTemplate((pickTemplateForContext(ctx).workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}'), ctx);
+              const existing = await getWorkspaceByName(expectedName);
+              if (existing) {
+                const existingUrl = computeWorkspaceUrl(existing);
+                const existingMeta2 = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
+                saveLastWorkspaceUrl(existingUrl, existingMeta2);
+                saveLastWorkspaceUrlForContext(ctx, existingUrl, existingMeta2);
+                saveLastWorkspaceUrlForChange(ctx, existingUrl, existingMeta2);
+                saveLastMeta(existingMeta2);
+                saveLastMetaForContext(ctx, existingMeta2);
+                notify(plugin, 'Opening existing Coder workspace');
+                window.open(existingUrl, '_blank', 'noopener');
+                return;
+              }
+            } catch (e) {
+              // Non-fatal: we will proceed to create
+              // eslint-disable-next-line no-console
+              console.warn('[coder-workspace] lookup existing by name failed; proceeding to create', e);
+            }
             if (config.enableDryRunPreview) {
               const {confirmed} = await previewAndConfirm(plugin, body);
               if (!confirmed) return;
@@ -499,12 +499,12 @@
             const ws = await createWorkspace(body);
             notify(plugin, 'Coder workspace created');
             const createdUrl = computeWorkspaceUrl(ws);
-            const meta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
-            saveLastWorkspaceUrl(createdUrl, meta);
-            saveLastWorkspaceUrlForContext(ctx, createdUrl, meta);
-            saveLastWorkspaceUrlForChange(ctx, createdUrl, meta);
-            saveLastMeta(meta);
-            saveLastMetaForContext(ctx, meta);
+            const createdMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
+            saveLastWorkspaceUrl(createdUrl, createdMeta);
+            saveLastWorkspaceUrlForContext(ctx, createdUrl, createdMeta);
+            saveLastWorkspaceUrlForChange(ctx, createdUrl, createdMeta);
+            saveLastMeta(createdMeta);
+            saveLastMetaForContext(ctx, createdMeta);
             window.open(createdUrl, '_blank', 'noopener');
           } catch (e) {
             const msg = e && e.message ? e.message : String(e);
