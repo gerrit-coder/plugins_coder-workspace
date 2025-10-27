@@ -89,6 +89,17 @@ curl -H "Coder-Session-Token: YOUR_TOKEN" \
      https://your-coder-instance.com/api/v2/templates
 ```
 
+Example responses:
+```json
+[
+  {
+    "id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
+    "name": "my-template",
+    "display_name": "My Development Template"
+  }
+]
+```
+
 #### Option B: Get Template Version ID (for specific version)
 ```bash
 curl -H "Coder-Session-Token: YOUR_TOKEN" \
@@ -97,16 +108,6 @@ curl -H "Coder-Session-Token: YOUR_TOKEN" \
 
 Example responses:
 ```json
-// Templates
-[
-  {
-    "id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
-    "name": "my-template",
-    "display_name": "My Development Template"
-  }
-]
-
-// Template Versions
 [
   {
     "id": "0ba39c92-1f1b-4c32-aa3e-9925d7713eb1",
@@ -220,6 +221,145 @@ Deletes your Coder workspace for the current context. You will be asked to confi
 ### Mock server (optional)
 
 For local/manual testing without a real Coder instance, see `plugins/coder-workspace/mock-server.md` for a minimal mock endpoint you can run to validate requests from the plugin.
+
+## Troubleshooting
+
+### Common Issues
+
+#### "Coder Workspace plugin is not configured (serverUrl is empty)"
+
+This error indicates the plugin cannot read its configuration. Follow these steps:
+
+1. **Check plugin installation:**
+   ```bash
+   ls -la $GERRIT_SITE/plugins/coder-workspace.jar
+   ```
+
+2. **Verify configuration endpoint:**
+   Visit `http://your-gerrit-server/config/server/coder-workspace.config`
+
+   **Expected result:** JSON response with your configuration
+   **If error/empty:** Plugin isn't loaded properly
+
+3. **Check browser console:**
+   - Open developer tools (F12)
+   - Look for `[coder-workspace]` debug messages
+   - Check for JavaScript errors
+
+4. **Restart Gerrit:**
+   ```bash
+   $GERRIT_SITE/bin/gerrit.sh restart
+   ```
+
+5. **Clear browser cache:**
+   - Hard refresh: Ctrl+F5 (Windows/Linux) or Cmd+Shift+R (Mac)
+   - Or clear browser cache completely
+
+#### Plugin not appearing in change page
+
+1. **Verify plugin is enabled:**
+   ```ini
+   [plugin "coder-workspace"]
+     enabled = true
+   ```
+
+2. **Check plugin list:**
+   Visit `http://your-gerrit-server/plugins/`
+   Look for `coder-workspace` in the list
+
+3. **Check Gerrit logs:**
+   ```bash
+   tail -f $GERRIT_SITE/logs/error_log
+   ```
+
+#### "Failed to open/create Coder workspace" errors
+
+1. **Verify Coder server connectivity:**
+   ```bash
+   curl -H "Coder-Session-Token: YOUR_TOKEN" \
+        https://your-coder-instance.com/api/v2/templates
+   ```
+
+2. **Check API token validity:**
+   - Ensure token hasn't expired
+   - Verify token has necessary permissions
+
+3. **Verify template ID:**
+   - Check template exists in Coder
+   - Ensure template ID is correct
+
+4. **Check organization ID:**
+   - Verify organization exists
+   - Ensure user has access to organization
+
+#### Configuration not loading
+
+1. **Check gerrit.config syntax:**
+   - No extra spaces or characters
+   - Proper section headers
+   - Valid JSON in `templateMappingsJson`
+
+2. **Verify secret management:**
+   ```ini
+   apiKey = ${secret:coder/session_token}
+   ```
+   Ensure the secret is properly configured in Gerrit's secret management.
+
+3. **Test configuration endpoint:**
+   ```bash
+   curl http://your-gerrit-server/config/server/coder-workspace.config
+   ```
+
+### Debug Steps
+
+#### Enable debug logging
+
+Add to your `gerrit.config`:
+```ini
+[log4j]
+  log4j.logger.com.gerritforge.gerrit.plugins.coderworkspace = DEBUG
+```
+
+#### Check browser console
+
+When clicking "Open Coder Workspace":
+1. Open browser developer tools (F12)
+2. Go to Console tab
+3. Look for messages starting with `[coder-workspace]`
+4. Check Network tab for API requests
+
+#### Verify Coder API access
+
+Test your Coder API configuration:
+```bash
+# Test basic connectivity
+curl -H "Coder-Session-Token: YOUR_TOKEN" \
+     https://your-coder-instance.com/api/v2/templates
+
+# Test workspace creation (dry run)
+curl -X POST \
+     -H "Coder-Session-Token: YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"name":"test-workspace","template_id":"YOUR_TEMPLATE_ID"}' \
+     https://your-coder-instance.com/api/v2/users/me/workspaces
+```
+
+### Getting Help
+
+If you continue to have issues:
+
+1. **Check Gerrit logs** for any plugin-related errors
+2. **Verify Coder instance** is accessible and API is working
+3. **Test with minimal configuration** first, then add complexity
+4. **Check browser console** for JavaScript errors
+5. **Ensure all required fields** are properly configured
+
+For additional support, include:
+- Gerrit version
+- Plugin version
+- Coder version
+- Error messages from logs
+- Browser console output
 
 ## Get the Gerrit source
 
