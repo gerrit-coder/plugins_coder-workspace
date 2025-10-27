@@ -274,21 +274,46 @@ This error indicates the plugin cannot read its configuration. Follow these step
 
 #### "Failed to open/create Coder workspace" errors
 
-1. **Verify Coder server connectivity:**
+1. **Check CORS configuration:**
+   If you see CORS errors in browser console:
+   ```
+   Access to fetch at 'https://coder.example.com/api/v2/...' from origin 'http://gerrit.example.com'
+   has been blocked by CORS policy
+   ```
+
+   **Solution:** Configure Coder to allow cross-origin requests from your Gerrit server:
+   ```yaml
+   # In your Coder configuration file (coder.yaml)
+   http:
+     cors:
+       allow_origins:
+         - "http://your-gerrit-server:port"
+       allow_methods:
+         - GET
+         - POST
+         - DELETE
+         - OPTIONS
+       allow_headers:
+         - Content-Type
+         - Coder-Session-Token
+   ```
+   Then restart Coder after making changes.
+
+2. **Verify Coder server connectivity:**
    ```bash
    curl -H "Coder-Session-Token: YOUR_TOKEN" \
         https://your-coder-instance.com/api/v2/templates
    ```
 
-2. **Check API token validity:**
+3. **Check API token validity:**
    - Ensure token hasn't expired
    - Verify token has necessary permissions
 
-3. **Verify template ID:**
+4. **Verify template ID:**
    - Check template exists in Coder
    - Ensure template ID is correct
 
-4. **Check organization ID:**
+5. **Check organization ID:**
    - Verify organization exists
    - Ensure user has access to organization
 
@@ -342,6 +367,23 @@ curl -X POST \
      -H "Content-Type: application/json" \
      -d '{"name":"test-workspace","template_id":"YOUR_TEMPLATE_ID"}' \
      https://your-coder-instance.com/api/v2/users/me/workspaces
+```
+
+#### Test CORS configuration
+
+If you're experiencing CORS issues, test the CORS preflight request:
+```bash
+# Test CORS preflight
+curl -H "Origin: http://your-gerrit-server:port" \
+     -H "Access-Control-Request-Method: GET" \
+     -H "Access-Control-Request-Headers: Coder-Session-Token" \
+     -X OPTIONS \
+     https://your-coder-instance.com/api/v2/templates
+
+# Expected response should include:
+# Access-Control-Allow-Origin: http://your-gerrit-server:port
+# Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+# Access-Control-Allow-Headers: Content-Type, Coder-Session-Token
 ```
 
 ### Getting Help
