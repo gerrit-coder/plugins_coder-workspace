@@ -35,18 +35,10 @@
     // Advanced features
     workspaceNameTemplate: '{repo}-{change}-{patchset}', // tokens: {repo},{branch},{change},{patchset}
     enableDryRunPreview: false,
-    historyLimit: 10,
   };
 
-  const STORAGE_LAST_KEY = 'gerrit-coder-workspace-last-url';
-  const STORAGE_LAST_CTX_PREFIX = 'gerrit-coder-workspace-last-url-ctx::';
-  const STORAGE_LAST_CTX_META_PREFIX = 'gerrit-coder-workspace-last-meta-ctx::';
-  const STORAGE_LAST_META_KEY = 'gerrit-coder-workspace-last-meta';
-  const STORAGE_LAST_CHANGE_PREFIX = 'gerrit-coder-workspace-last-url-change::';
-  // History lists (most-recent-first)
-  const STORAGE_LAST_LIST = 'gerrit-coder-workspace-last-list';
-  const STORAGE_LAST_CTX_LIST_PREFIX = 'gerrit-coder-workspace-last-list-ctx::';
-  const STORAGE_LAST_CHANGE_LIST_PREFIX = 'gerrit-coder-workspace-last-list-change::';
+  const STORAGE_CURRENT_WORKSPACE_KEY = 'gerrit-coder-workspace-current';
+  const STORAGE_CURRENT_META_KEY = 'gerrit-coder-workspace-current-meta';
 
   function resolveCoderUrl(path) {
     return (config.serverUrl || '').replace(/\/$/, '') + path;
@@ -207,41 +199,26 @@
     return appUri || resolveCoderUrl(`/@${encodeURIComponent(workspace.owner_name || '')}/${encodeURIComponent(workspace.name)}`);
   }
 
-  function saveLastWorkspaceUrl(url, meta) {
-    try { localStorage.setItem(STORAGE_LAST_KEY, url || ''); } catch (_) {}
-    pushHistoryItem(STORAGE_LAST_LIST, {url, meta: meta || loadLastMeta(), ts: Date.now()});
-  }
-
-  function loadLastWorkspaceUrl() {
-    try { return localStorage.getItem(STORAGE_LAST_KEY) || ''; } catch (_) { return ''; }
-  }
-
-  function contextKey(ctx) {
-    return `${ctx.repo}||${ctx.branch}`;
-  }
-
-  function changeKey(ctx) {
-    return `${ctx.repo}||${ctx.branch}||${ctx.change}||${ctx.patchset}`;
-  }
-
-  function saveLastWorkspaceUrlForContext(ctx, url, meta) {
+  function saveCurrentWorkspace(url, meta) {
     try {
-      const key = STORAGE_LAST_CTX_PREFIX + encodeURIComponent(contextKey(ctx));
-      localStorage.setItem(key, url || '');
+      localStorage.setItem(STORAGE_CURRENT_WORKSPACE_KEY, url || '');
+      localStorage.setItem(STORAGE_CURRENT_META_KEY, JSON.stringify(meta || {}));
     } catch (_) {}
-    const listKey = STORAGE_LAST_CTX_LIST_PREFIX + encodeURIComponent(contextKey(ctx));
-    pushHistoryItem(listKey, {url, meta: meta || {repo: ctx.repo, branch: ctx.branch}, ts: Date.now()});
   }
 
-  function loadLastWorkspaceUrlForContext(ctx) {
+  function loadCurrentWorkspace() {
+    try { return localStorage.getItem(STORAGE_CURRENT_WORKSPACE_KEY) || ''; } catch (_) { return ''; }
+  }
+
+  function loadCurrentMeta() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_CURRENT_META_KEY) || '{}'); } catch (_) { return {}; }
+  }
+
+  function clearCurrentWorkspace() {
     try {
-      const key = STORAGE_LAST_CTX_PREFIX + encodeURIComponent(contextKey(ctx));
-      return localStorage.getItem(key) || '';
-    } catch (_) { return ''; }
-  }
-
-  function saveLastMeta(meta) {
-    try { localStorage.setItem(STORAGE_LAST_META_KEY, JSON.stringify(meta || {})); } catch (_) {}
+      localStorage.removeItem(STORAGE_CURRENT_WORKSPACE_KEY);
+      localStorage.removeItem(STORAGE_CURRENT_META_KEY);
+    } catch (_) {}
   }
   async function deleteWorkspaceByName(workspaceName) {
     const headers = {'Accept': 'application/json'};
@@ -259,35 +236,6 @@
     }
   }
 
-  function loadLastMeta() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_LAST_META_KEY) || '{}'); } catch (_) { return {}; }
-  }
-  function saveLastMetaForContext(ctx, meta) {
-    try {
-      const key = STORAGE_LAST_CTX_META_PREFIX + encodeURIComponent(contextKey(ctx));
-      localStorage.setItem(key, JSON.stringify(meta || {}));
-    } catch (_) {}
-  }
-  function loadLastMetaForContext(ctx) {
-    try {
-      const key = STORAGE_LAST_CTX_META_PREFIX + encodeURIComponent(contextKey(ctx));
-      return JSON.parse(localStorage.getItem(key) || '{}');
-    } catch (_) { return {}; }
-  }
-  function saveLastWorkspaceUrlForChange(ctx, url, meta) {
-    try {
-      const key = STORAGE_LAST_CHANGE_PREFIX + encodeURIComponent(changeKey(ctx));
-      localStorage.setItem(key, url || '');
-    } catch (_) {}
-    const listKey = STORAGE_LAST_CHANGE_LIST_PREFIX + encodeURIComponent(changeKey(ctx));
-    pushHistoryItem(listKey, {url, meta: meta || {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset}, ts: Date.now()});
-  }
-  function loadLastWorkspaceUrlForChange(ctx) {
-    try {
-      const key = STORAGE_LAST_CHANGE_PREFIX + encodeURIComponent(changeKey(ctx));
-      return localStorage.getItem(key) || '';
-    } catch (_) { return ''; }
-  }
 
   function notify(plugin, message) {
     // Basic toast: fall back to alert if plugin API not available
@@ -302,116 +250,7 @@
     }
   }
 
-  // History helpers
-  function loadHistory(listKey) {
-    try { return JSON.parse(localStorage.getItem(listKey) || '[]'); } catch (_) { return []; }
-  }
-  function saveHistory(listKey, arr) {
-    try { localStorage.setItem(listKey, JSON.stringify(arr || [])); } catch (_) {}
-  }
-  function pushHistoryItem(listKey, item) {
-    try {
-      const limit = Math.max(1, Number(config.historyLimit || 10));
-      const arr = loadHistory(listKey);
-      if (arr.length === 0 || (arr[0] && arr[0].url !== item.url)) arr.unshift(item);
-      while (arr.length > limit) arr.pop();
-      saveHistory(listKey, arr);
-    } catch (_) {}
-  }
 
-  // Simple in-page history viewer (not shown in menu by default)
-  async function openHistoryPanel() {
-      const ctx = getChangeContextFromPage();
-      const sections = [
-        {label:'Global', listKey: STORAGE_LAST_LIST},
-        {label:'Current Repo/Branch', listKey: STORAGE_LAST_CTX_LIST_PREFIX + encodeURIComponent(contextKey(ctx))},
-        {label:'Current Change/Patchset', listKey: STORAGE_LAST_CHANGE_LIST_PREFIX + encodeURIComponent(changeKey(ctx))},
-      ];
-      const backdrop = document.createElement('div');
-      Object.assign(backdrop.style, {position:'fixed',inset:'0',background:'rgba(0,0,0,0.3)',zIndex:1000});
-      const panel = document.createElement('div');
-      Object.assign(panel.style, {position:'fixed',left:'10%',right:'10%',top:'10%',bottom:'10%',background:'#fff',border:'1px solid #ddd',padding:'12px',zIndex:1001,overflow:'auto'});
-      const title = document.createElement('h2');
-      title.textContent = 'Coder Workspace History';
-      const topBar = document.createElement('div');
-      topBar.style.display = 'flex';
-      topBar.style.gap = '8px';
-      topBar.style.alignItems = 'center';
-      topBar.style.margin = '8px 0';
-      const limitLabel = document.createElement('span');
-      limitLabel.textContent = 'Retention limit:';
-      const limitInput = document.createElement('input');
-      limitInput.type = 'number';
-      limitInput.value = String(Number(config.historyLimit || 10));
-      limitInput.style.width = '80px';
-      const applyBtn = document.createElement('gr-button');
-      applyBtn.textContent = 'Apply';
-      const closeBtn = document.createElement('gr-button');
-      closeBtn.textContent = 'Close';
-      topBar.appendChild(limitLabel);
-      topBar.appendChild(limitInput);
-      topBar.appendChild(applyBtn);
-      topBar.appendChild(closeBtn);
-
-      const container = document.createElement('div');
-      function render() {
-        container.innerHTML = '';
-        for (const sec of sections) {
-          const secEl = document.createElement('div');
-          const h3 = document.createElement('h3');
-          h3.textContent = sec.label;
-          const actions = document.createElement('div');
-          actions.style.display = 'flex';
-          actions.style.gap = '8px';
-          actions.style.alignItems = 'center';
-          actions.style.margin = '4px 0';
-          const clearBtn = document.createElement('gr-button');
-          clearBtn.textContent = 'Clear';
-          clearBtn.addEventListener('click', () => { saveHistory(sec.listKey, []); render(); });
-          actions.appendChild(clearBtn);
-          const ul = document.createElement('ul');
-          ul.style.maxHeight = '200px';
-          ul.style.overflow = 'auto';
-          ul.style.paddingLeft = '18px';
-          const history = loadHistory(sec.listKey);
-          for (const item of history) {
-            const li = document.createElement('li');
-            li.style.fontFamily = 'monospace';
-            const when = new Date(item.ts || Date.now()).toLocaleString();
-            const m = item.meta || {};
-            li.textContent = `[${when}] ${m.repo || '?'} @ ${m.branch || '?'} ${m.change?('change '+m.change):''} ${m.patchset?('ps '+m.patchset):''} => ${item.url}`;
-            ul.appendChild(li);
-          }
-          secEl.appendChild(h3);
-          secEl.appendChild(actions);
-          secEl.appendChild(ul);
-          container.appendChild(secEl);
-        }
-      }
-      render();
-
-      applyBtn.addEventListener('click', () => {
-        const v = Number(limitInput.value);
-        if (Number.isFinite(v) && v > 0) {
-          saveConfig({historyLimit: v});
-          // prune existing lists shown
-          const limit = Math.max(1, v);
-          for (const sec of sections) {
-            const arr = loadHistory(sec.listKey);
-            if (arr.length > limit) saveHistory(sec.listKey, arr.slice(0, limit));
-          }
-          notify(null, 'Updated history retention');
-          render();
-        }
-      });
-      closeBtn.addEventListener('click', () => { try { panel.remove(); } catch(_){} try { backdrop.remove(); } catch(_){} });
-
-      panel.appendChild(title);
-      panel.appendChild(topBar);
-      panel.appendChild(container);
-      document.body.appendChild(backdrop);
-      document.body.appendChild(panel);
-  }
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -454,62 +293,59 @@
         changeActions.setTitle(openLastKey, 'Open your Coder workspace, creating one if necessary');
         changeActions.addTapListener(openLastKey, async () => {
           try {
-            // Prefer workspace associated with current change and patchset.
             const ctx = getChangeContextFromPage();
-            let url = loadLastWorkspaceUrlForChange(ctx);
-            let existingMeta = url ? loadLastMetaForContext(ctx) : null; // change-level meta saved via saveLastWorkspaceUrlForChange
-            if (url) {
-              if (existingMeta && (existingMeta.repo || existingMeta.branch)) {
-                notify(plugin, `Opening Coder workspace for ${existingMeta.repo || '?'} @ ${existingMeta.branch || '?'}`);
-              }
-              window.open(url, '_blank', 'noopener');
+            const currentUrl = loadCurrentWorkspace();
+            const currentMeta = loadCurrentMeta();
+
+            // Check if we have a current workspace and it matches the current context
+            if (currentUrl && currentMeta &&
+                currentMeta.repo === ctx.repo &&
+                currentMeta.branch === ctx.branch &&
+                currentMeta.change === ctx.change &&
+                currentMeta.patchset === ctx.patchset) {
+              notify(plugin, `Opening Coder workspace for ${ctx.repo} @ ${ctx.branch}`);
+              window.open(currentUrl, '_blank', 'noopener');
               return;
             }
-            // No existing URL recorded for this repo/branch/patchset: try to find an existing workspace by the expected name; otherwise create one
+
+            // No matching workspace: try to find existing or create new one
             if (!config.serverUrl) {
               notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty). Please ask an administrator to set [plugin "coder-workspace"] in gerrit.config.');
               return;
             }
+
             const body = buildCreateRequest(ctx);
             try {
-              // Attempt to re-use existing workspace with the expected name (idempotence)
+              // Attempt to re-use existing workspace with the expected name
               const expectedName = body && body.name ? body.name : renderNameTemplate((pickTemplateForContext(ctx).workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}'), ctx);
               const existing = await getWorkspaceByName(expectedName);
               if (existing) {
                 const existingUrl = computeWorkspaceUrl(existing);
-                const existingMeta2 = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
-                saveLastWorkspaceUrl(existingUrl, existingMeta2);
-                saveLastWorkspaceUrlForContext(ctx, existingUrl, existingMeta2);
-                saveLastWorkspaceUrlForChange(ctx, existingUrl, existingMeta2);
-                saveLastMeta(existingMeta2);
-                saveLastMetaForContext(ctx, existingMeta2);
+                const existingMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
+                saveCurrentWorkspace(existingUrl, existingMeta);
                 notify(plugin, 'Opening existing Coder workspace');
                 window.open(existingUrl, '_blank', 'noopener');
                 return;
               }
             } catch (e) {
               // Non-fatal: we will proceed to create
-              // eslint-disable-next-line no-console
               console.warn('[coder-workspace] lookup existing by name failed; proceeding to create', e);
             }
+
             if (config.enableDryRunPreview) {
               const {confirmed} = await previewAndConfirm(plugin, body);
               if (!confirmed) return;
             }
+
             const ws = await createWorkspace(body);
             notify(plugin, 'Coder workspace created');
             const createdUrl = computeWorkspaceUrl(ws);
             const createdMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
-            saveLastWorkspaceUrl(createdUrl, createdMeta);
-            saveLastWorkspaceUrlForContext(ctx, createdUrl, createdMeta);
-            saveLastWorkspaceUrlForChange(ctx, createdUrl, createdMeta);
-            saveLastMeta(createdMeta);
-            saveLastMetaForContext(ctx, createdMeta);
+            saveCurrentWorkspace(createdUrl, createdMeta);
             window.open(createdUrl, '_blank', 'noopener');
           } catch (e) {
             const msg = e && e.message ? e.message : String(e);
             notify(plugin, 'Failed to open/create Coder workspace: ' + msg);
-            // eslint-disable-next-line no-console
             console.error('[coder-workspace] open/create failed', e);
           }
         });
@@ -519,32 +355,43 @@
         changeActions.setActionOverflow('revision', deleteKey, true);
         // Finally Delete (9999)
         if (changeActions.setActionPriority) changeActions.setActionPriority('revision', deleteKey, 9999);
-        changeActions.setTitle(deleteKey, 'Delete your Coder workspace and clear saved link');
+        changeActions.setTitle(deleteKey, 'Delete your Coder workspace for current context');
         changeActions.addTapListener(deleteKey, async () => {
           try {
             if (!config.serverUrl) {
               notify(plugin, 'Coder Workspace plugin is not configured (serverUrl is empty).');
               return;
             }
-            const meta = loadLastMeta();
-            const name = meta && meta.workspaceName;
+
+            const ctx = getChangeContextFromPage();
+            const currentMeta = loadCurrentMeta();
+
+            // Check if current workspace matches the current context
+            if (!currentMeta ||
+                currentMeta.repo !== ctx.repo ||
+                currentMeta.branch !== ctx.branch ||
+                currentMeta.change !== ctx.change ||
+                currentMeta.patchset !== ctx.patchset) {
+              notify(plugin, 'No workspace found for current context. Create/open one first.');
+              return;
+            }
+
+            const name = currentMeta.workspaceName;
             if (!name) {
               notify(plugin, 'No workspace found to delete. Create/open one first.');
               return;
             }
+
             // Confirm deletion
-            // eslint-disable-next-line no-alert
-            const ok = window.confirm(`Delete Coder workspace "${name}"?`);
+            const ok = window.confirm(`Delete Coder workspace "${name}" for ${ctx.repo} @ ${ctx.branch}?`);
             if (!ok) return;
+
             await deleteWorkspaceByName(name);
             notify(plugin, 'Coder workspace deleted');
-            // Clear saved global URL and meta
-            try { localStorage.removeItem(STORAGE_LAST_KEY); } catch(_){}
-            saveLastMeta({});
+            clearCurrentWorkspace();
           } catch (e) {
             const msg = e && e.message ? e.message : String(e);
             notify(plugin, 'Failed to delete Coder workspace: ' + msg);
-            // eslint-disable-next-line no-console
             console.error('[coder-workspace] delete failed', e);
           }
         });

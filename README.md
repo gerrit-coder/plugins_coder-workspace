@@ -16,14 +16,18 @@ rich parameters.
 - Optional Dry-Run Preview (admin-controlled) to confirm the request URL and payload before creating
 - "Open Coder Workspace" action (open or create-on-demand)
 - "Delete Coder Workspace" action
-- Bounded history with retention limit per scope (admin-controlled)
+- Single workspace management (no history tracking)
 
 ## Configure
 
 Add to `gerrit.config` (example):
 
 ```
+[plugins]
+  allowRemoteAdmin = true
+
 [plugin "coder-workspace"]
+  enabled = true
   serverUrl = https://coder.example.com
   apiKey = ${secret:coder/session_token}
   # Use either templateId or templateVersionId
@@ -36,7 +40,6 @@ Add to `gerrit.config` (example):
   openAfterCreate = true
   enableDryRunPreview = false
   ttlMs = 0
-  historyLimit = 10
   # Map Gerrit fields to template parameter names (optional)
   richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
 
@@ -95,21 +98,21 @@ If a mapping provides `richParams`, it overrides the default parameter mapping f
 - On the change page, the "Open Coder Workspace" action targets the latest patchset if none is selected.
 - The plugin passes repo, branch, change, patchset and change URL as rich parameters by default (configurable).
 
-### History
+### Single Workspace Management
 
-The plugin records the last created workspace links in your browser (localStorage) to enable quick "Open Last" actions. Retention can be tuned via `historyLimit` in `gerrit.config`.
+The plugin manages a single workspace at a time. When creating a new workspace, any existing workspace for the same context will be replaced.
 
 ### "Open Coder Workspace" action
 
 The plugin adds one convenience action in the change page overflow menu:
 
-- "Open Coder Workspace": Opens your Coder workspace for the current change/patchset. If no workspace is recorded for this repo/branch/patchset, the plugin first attempts to find an existing workspace by the expected name (based on your name template and mappings). If none exists, it is created on-demand and then opened.
+- "Open Coder Workspace": Opens your Coder workspace for the current change/patchset. If no workspace exists for this context, the plugin first attempts to find an existing workspace by the expected name (based on your name template and mappings). If none exists, it is created on-demand and then opened.
 
 This action is always available. A short toast indicates the context when opening/creating.
 
 ### "Delete Coder Workspace" action
 
-Deletes your Coder workspace and clears the saved link in the browser. You will be asked to confirm the deletion.
+Deletes your Coder workspace for the current context. You will be asked to confirm the deletion.
 
 ### Mock server (optional)
 

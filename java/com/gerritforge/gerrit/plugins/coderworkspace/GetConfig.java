@@ -41,7 +41,6 @@ public class GetConfig implements RestReadView<ConfigResource> {
     info.openAfterCreate = cfg.getBoolean("openAfterCreate", info.openAfterCreate);
     info.enableDryRunPreview = cfg.getBoolean("enableDryRunPreview", info.enableDryRunPreview);
     info.ttlMs = cfg.getLong("ttlMs", info.ttlMs);
-    info.historyLimit = cfg.getInt("historyLimit", info.historyLimit);
 
     // richParams: comma-separated NAME:from entries
     String rp = cfg.getString("richParams");

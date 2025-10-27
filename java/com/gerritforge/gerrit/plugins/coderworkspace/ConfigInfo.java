@@ -20,7 +20,6 @@ public class ConfigInfo {
   public boolean openAfterCreate = true;
   public boolean enableDryRunPreview = false;
   public long ttlMs = 0;
-  public int historyLimit = 10;
 
   public List<RichParam> richParams = defaultRichParams();
   public List<TemplateMapping> templateMappings = new ArrayList<>();
