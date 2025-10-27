@@ -50,6 +50,109 @@ Add to `gerrit.config` (example):
   ]
 ```
 
+## Getting Coder Configuration Values
+
+To configure the plugin, you need to obtain several values from your Coder instance:
+
+### 1. Get Your API Token
+
+1. Log into your Coder instance
+2. Go to your user settings/profile
+3. Look for "API Tokens" or "Session Tokens" section
+4. Generate a new token and copy it
+
+### 2. Get Organization ID
+
+Use the Coder API to find your organization ID:
+
+```bash
+curl -H "Coder-Session-Token: YOUR_TOKEN" \
+     https://your-coder-instance.com/api/v2/organizations
+```
+
+This returns a list of organizations with their IDs:
+```json
+[
+  {
+    "id": "7c60d51f-b44e-4682-87d6-449835ea4de6",
+    "name": "my-org",
+    "display_name": "My Organization"
+  }
+]
+```
+
+### 3. Get Template Information
+
+#### Option A: Get Template ID (uses latest version)
+```bash
+curl -H "Coder-Session-Token: YOUR_TOKEN" \
+     https://your-coder-instance.com/api/v2/templates
+```
+
+#### Option B: Get Template Version ID (for specific version)
+```bash
+curl -H "Coder-Session-Token: YOUR_TOKEN" \
+     https://your-coder-instance.com/api/v2/templates/TEMPLATE_ID/versions
+```
+
+Example responses:
+```json
+// Templates
+[
+  {
+    "id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
+    "name": "my-template",
+    "display_name": "My Development Template"
+  }
+]
+
+// Template Versions
+[
+  {
+    "id": "0ba39c92-1f1b-4c32-aa3e-9925d7713eb1",
+    "template_id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
+    "name": "v1.0.0",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+### 4. Alternative: Use Coder CLI
+
+If you have the Coder CLI installed:
+
+```bash
+# List organizations
+coder orgs list
+
+# List templates
+coder templates list
+
+# List template versions for a specific template
+coder templates versions list TEMPLATE_NAME
+```
+
+### 5. Update Your gerrit.config
+
+Once you have these values, update your `gerrit.config`:
+
+```ini
+[plugin "coder-workspace"]
+  enabled = true
+  serverUrl = https://your-coder-instance.com
+  apiKey = ${secret:coder/session_token}  # Your API token
+  organization = 7c60d51f-b44e-4682-87d6-449835ea4de6  # From step 2
+  templateId = c6d67e98-83ea-49f0-8812-e4abae2b68bc  # From step 3A
+  # OR use templateVersionId for specific version:
+  # templateVersionId = 0ba39c92-1f1b-4c32-aa3e-9925d7713eb1  # From step 3B
+```
+
+**Notes:**
+- **Template ID**: Uses the latest version of the template
+- **Template Version ID**: Uses a specific version of the template (more precise)
+- **Organization**: Only needed if you're using organization-scoped workspaces
+- **API Token**: Should be stored securely, preferably using Gerrit's secret management (`${secret:coder/session_token}`)
+
 ## Configuration source
 
 This plugin reads its configuration from Gerrit's `gerrit.config` under `[plugin "coder-workspace"]`.
