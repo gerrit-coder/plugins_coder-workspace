@@ -162,12 +162,19 @@
     } else {
       url = resolveCoderUrl(`/api/v2/users/${encodeURIComponent(config.user || 'me')}/workspaces`);
     }
-    const res = await fetch(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Coder API error ${res.status}: ${text}`);
+
+    try {
+      const res = await fetch(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(`[coder-workspace] POST workspace failed: ${res.status} ${text}`);
+        throw new Error(`Coder API error ${res.status}: ${text}`);
+      }
+      return res.json();
+    } catch (error) {
+      console.error(`[coder-workspace] POST workspace error:`, error);
+      throw error;
     }
-    return res.json();
   }
 
   async function getWorkspaceByName(workspaceName) {
@@ -179,13 +186,21 @@
     const url = config.organization
       ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
       : `${base}/api/v2/users/${userSeg}/workspaces/${nameSeg}`;
-    const res = await fetch(url, { method: 'GET', headers });
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Coder API error ${res.status}: ${text}`);
+
+    try {
+      const res = await fetch(url, { method: 'GET', headers });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        const text = await res.text();
+        console.warn(`[coder-workspace] GET workspace failed: ${res.status} ${text}`);
+        throw new Error(`Coder API error ${res.status}: ${text}`);
+      }
+      return res.json();
+    } catch (error) {
+      console.warn(`[coder-workspace] GET workspace error:`, error);
+      // Return null to allow fallback to create new workspace
+      return null;
     }
-    return res.json();
   }
 
   function openWorkspace(workspace) {
@@ -229,10 +244,17 @@
     const url = config.organization
       ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
       : `${base}/api/v2/users/${userSeg}/workspaces/${nameSeg}`;
-    const res = await fetch(url, { method: 'DELETE', headers });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Coder API error ${res.status}: ${text}`);
+
+    try {
+      const res = await fetch(url, { method: 'DELETE', headers });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(`[coder-workspace] DELETE workspace failed: ${res.status} ${text}`);
+        throw new Error(`Coder API error ${res.status}: ${text}`);
+      }
+    } catch (error) {
+      console.error(`[coder-workspace] DELETE workspace error:`, error);
+      throw error;
     }
   }
 
@@ -318,15 +340,17 @@
             try {
               // Attempt to re-use existing workspace with the expected name
               const expectedName = body && body.name ? body.name : renderNameTemplate((pickTemplateForContext(ctx).workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}'), ctx);
+              console.log(`[coder-workspace] Looking for existing workspace: ${expectedName}`);
               const existing = await getWorkspaceByName(expectedName);
               if (existing) {
                 const existingUrl = computeWorkspaceUrl(existing);
                 const existingMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
                 saveCurrentWorkspace(existingUrl, existingMeta);
-                notify(plugin, 'Opening existing Coder workspace');
+                notify(plugin, `Opening existing Coder workspace: ${existing.name}`);
                 window.open(existingUrl, '_blank', 'noopener');
                 return;
               }
+              console.log(`[coder-workspace] No existing workspace found, will create new one`);
             } catch (e) {
               // Non-fatal: we will proceed to create
               console.warn('[coder-workspace] lookup existing by name failed; proceeding to create', e);
@@ -338,7 +362,8 @@
             }
 
             const ws = await createWorkspace(body);
-            notify(plugin, 'Coder workspace created');
+            console.log(`[coder-workspace] Successfully created workspace:`, ws);
+            notify(plugin, `Coder workspace created: ${ws.name}`);
             const createdUrl = computeWorkspaceUrl(ws);
             const createdMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
             saveCurrentWorkspace(createdUrl, createdMeta);
