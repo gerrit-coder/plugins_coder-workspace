@@ -383,6 +383,42 @@ curl -X POST \
      https://your-coder-instance.com/api/v2/users/me/workspaces
 ```
 
+### Browser Development Setup
+
+#### Disabling CORS for Development
+
+When developing with the coder-workspace plugin, you may encounter CORS (Cross-Origin Resource Sharing) issues. To disable CORS for development purposes, launch Chrome or Edge with the `--disable-web-security` flag:
+
+**Chrome:**
+```bash
+# Windows
+chrome.exe --user-data-dir="C:/temp/chrome_dev" --disable-web-security --disable-features=VizDisplayCompositor
+
+# macOS
+open -n -a /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --args --user-data-dir="/tmp/chrome_dev" --disable-web-security
+
+# Linux
+google-chrome --user-data-dir="/tmp/chrome_dev" --disable-web-security
+```
+
+**Microsoft Edge:**
+```bash
+# Windows
+msedge.exe --user-data-dir="C:/temp/edge_dev" --disable-web-security --disable-features=VizDisplayCompositor
+
+# macOS
+open -n -a /Applications/Microsoft\ Edge.app/Contents/MacOS/Microsoft\ Edge --args --user-data-dir="/tmp/edge_dev" --disable-web-security
+
+# Linux
+microsoft-edge --user-data-dir="/tmp/edge_dev" --disable-web-security
+```
+
+**⚠️ Important Security Note:**
+- Only use these flags for development purposes
+- Never use `--disable-web-security` for regular browsing
+- The `--user-data-dir` flag creates a separate profile to avoid affecting your main browser data
+- Close all browser windows before launching with these flags
+
 ### Getting Help
 
 If you continue to have issues:
