@@ -1,0 +1,42 @@
+# Example Gerrit Configuration for Coder Workspace Plugin
+# This file shows the recommended configuration for Coder integration
+
+[plugins]
+  allowRemoteAdmin = true
+
+[plugin "coder-workspace"]
+  enabled = true
+
+  # Coder server URL
+  serverUrl = http://localhost:3000
+
+  # Your Coder API token (store securely using Gerrit's secret management)
+  apiKey = ${secret:coder/session_token}
+
+  # Template configuration (get these values from your Coder instance)
+  templateId = YOUR_TEMPLATE_ID
+  # OR use templateVersionId for specific version:
+  # templateVersionId = YOUR_TEMPLATE_VERSION_ID
+
+  # Organization and user configuration
+  organization = YOUR_ORGANIZATION_ID
+  user = YOUR_USERNAME
+
+  # Workspace behavior settings
+  autostart = true
+  automaticUpdates = always
+  openAfterCreate = true
+  enableDryRunPreview = false
+  ttlMs = 0
+
+  # Workspace naming template (tokens: {repo}, {branch}, {change}, {patchset})
+  workspaceNameTemplate = "{repo}-{change}-{patchset}"
+
+  # Rich parameter mapping (maps Gerrit context to template parameters)
+  richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
+
+  # Optional per-repo/branch template overrides (JSON string)
+  # templateMappingsJson = [
+  #   {"repo":"my/org/*","branch":"refs/heads/main","templateVersionId":"0ba39c92-1f1b-4c32-aa3e-9925d7713eb1"},
+  #   {"repo":"another/repo","branch":"refs/heads/*","templateId":"c6d67e98-83ea-49f0-8812-e4abae2b68bc"}
+  # ]

@@ -22,13 +22,14 @@ rich parameters.
 
 Add to `gerrit.config` (example):
 
+**Option 1: Direct Coder Connection**
 ```
 [plugins]
   allowRemoteAdmin = true
 
 [plugin "coder-workspace"]
   enabled = true
-  serverUrl = https://coder.example.com
+  serverUrl = http://localhost:3000  # Direct Coder connection
   apiKey = ${secret:coder/session_token}
   # Use either templateId or templateVersionId
   templateId = c6d67e98-83ea-49f0-8812-e4abae2b68bc
@@ -48,6 +49,18 @@ Add to `gerrit.config` (example):
     {"repo":"my/org/*","branch":"refs/heads/main","templateVersionId":"0ba39c92-1f1b-4c32-aa3e-9925d7713eb1","templateVersionPresetId":"512a53a7-30da-446e-a1fc-713c630baff1"},
     {"repo":"another/repo","branch":"refs/heads/*","templateId":"c6d67e98-83ea-49f0-8812-e4abae2b68bc"}
   ]
+```
+
+**Option 2: Production Setup**
+```
+[plugins]
+  allowRemoteAdmin = true
+
+[plugin "coder-workspace"]
+  enabled = true
+  serverUrl = https://coder.example.com  # Production Coder instance
+  apiKey = ${secret:coder/session_token}
+  # ... rest of configuration same as above
 ```
 
 ## Getting Coder Configuration Values
@@ -137,10 +150,23 @@ coder templates versions list TEMPLATE_NAME
 
 Once you have these values, update your `gerrit.config`:
 
+**For direct Coder connection:**
 ```ini
 [plugin "coder-workspace"]
   enabled = true
-  serverUrl = https://your-coder-instance.com
+  serverUrl = http://localhost:3000  # Direct Coder connection
+  apiKey = ${secret:coder/session_token}  # Your API token
+  organization = 7c60d51f-b44e-4682-87d6-449835ea4de6  # From step 2
+  templateId = c6d67e98-83ea-49f0-8812-e4abae2b68bc  # From step 3A
+  # OR use templateVersionId for specific version:
+  # templateVersionId = 0ba39c92-1f1b-4c32-aa3e-9925d7713eb1  # From step 3B
+```
+
+**For production setup:**
+```ini
+[plugin "coder-workspace"]
+  enabled = true
+  serverUrl = https://your-coder-instance.com  # Production Coder connection
   apiKey = ${secret:coder/session_token}  # Your API token
   organization = 7c60d51f-b44e-4682-87d6-449835ea4de6  # From step 2
   templateId = c6d67e98-83ea-49f0-8812-e4abae2b68bc  # From step 3A
@@ -222,6 +248,19 @@ Deletes your Coder workspace for the current context. You will be asked to confi
 
 For local/manual testing without a real Coder instance, see `plugins/coder-workspace/mock-server.md` for a minimal mock endpoint you can run to validate requests from the plugin.
 
+## Test Environment
+
+For a complete test environment setup, see the `test/` directory in this repository:
+
+```bash
+cd test/
+cp env.example .env
+# Edit .env with your values
+./run.sh
+```
+
+This will set up both Coder and the plugin with proper configuration automatically.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -274,46 +313,21 @@ This error indicates the plugin cannot read its configuration. Follow these step
 
 #### "Failed to open/create Coder workspace" errors
 
-1. **Check CORS configuration:**
-   If you see CORS errors in browser console:
-   ```
-   Access to fetch at 'https://coder.example.com/api/v2/...' from origin 'http://gerrit.example.com'
-   has been blocked by CORS policy
-   ```
-
-   **Solution:** Configure Coder to allow cross-origin requests from your Gerrit server:
-   ```yaml
-   # In your Coder configuration file (coder.yaml)
-   http:
-     cors:
-       allow_origins:
-         - "http://your-gerrit-server:port"
-       allow_methods:
-         - GET
-         - POST
-         - DELETE
-         - OPTIONS
-       allow_headers:
-         - Content-Type
-         - Coder-Session-Token
-   ```
-   Then restart Coder after making changes.
-
-2. **Verify Coder server connectivity:**
+1. **Verify Coder server connectivity:**
    ```bash
    curl -H "Coder-Session-Token: YOUR_TOKEN" \
         https://your-coder-instance.com/api/v2/templates
    ```
 
-3. **Check API token validity:**
+2. **Check API token validity:**
    - Ensure token hasn't expired
    - Verify token has necessary permissions
 
-4. **Verify template ID:**
+3. **Verify template ID:**
    - Check template exists in Coder
    - Ensure template ID is correct
 
-5. **Check organization ID:**
+4. **Check organization ID:**
    - Verify organization exists
    - Ensure user has access to organization
 
@@ -369,23 +383,6 @@ curl -X POST \
      https://your-coder-instance.com/api/v2/users/me/workspaces
 ```
 
-#### Test CORS configuration
-
-If you're experiencing CORS issues, test the CORS preflight request:
-```bash
-# Test CORS preflight
-curl -H "Origin: http://your-gerrit-server:port" \
-     -H "Access-Control-Request-Method: GET" \
-     -H "Access-Control-Request-Headers: Coder-Session-Token" \
-     -X OPTIONS \
-     https://your-coder-instance.com/api/v2/templates
-
-# Expected response should include:
-# Access-Control-Allow-Origin: http://your-gerrit-server:port
-# Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
-# Access-Control-Allow-Headers: Content-Type, Coder-Session-Token
-```
-
 ### Getting Help
 
 If you continue to have issues:
@@ -395,6 +392,7 @@ If you continue to have issues:
 3. **Test with minimal configuration** first, then add complexity
 4. **Check browser console** for JavaScript errors
 5. **Ensure all required fields** are properly configured
+6. **Use the test environment** in `test/` directory to validate your setup
 
 For additional support, include:
 - Gerrit version
