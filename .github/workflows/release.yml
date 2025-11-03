@@ -11,7 +11,6 @@ permissions:
 
 jobs:
   test:
-    name: Run test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,13 +25,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: test/package-lock.json
 
       - name: Install dependencies
+        if: ${{ hashFiles('test/package.json') != '' }}
         run: npm install
 
       - name: Run Jest
+        if: ${{ hashFiles('test/package.json') != '' }}
         env:
           CI: 'true'
           TEST_MODE: 'mock'
@@ -42,6 +41,8 @@ jobs:
   build-and-release:
     needs: [test]
     runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.event.release.tag_name || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,24 +101,24 @@ jobs:
         working-directory: ${{ env.GERRIT_DIR }}
         run: |
           mkdir -p dist
-          cp bazel-bin/plugins/coder-workspace/coder-workspace.jar dist/coder-workspace-${{ github.ref_name }}.jar
+          cp bazel-bin/plugins/coder-workspace/coder-workspace.jar dist/coder-workspace-${{ env.TAG_NAME }}.jar
           (cd dist && sha256sum *.jar > SHA256SUMS.txt)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coder-workspace-${{ github.ref_name }}
+          name: coder-workspace-${{ env.TAG_NAME }}
           path: ${{ env.GERRIT_DIR }}/dist/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GERRIT_CODER_TOKEN }}
         with:
           files: |
-            ${{ env.GERRIT_DIR }}/dist/coder-workspace-${{ github.ref_name }}.jar
+            ${{ env.GERRIT_DIR }}/dist/coder-workspace-${{ env.TAG_NAME }}.jar
             ${{ env.GERRIT_DIR }}/dist/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          prerelease: ${{ contains(env.TAG_NAME, 'rc') || contains(env.TAG_NAME, 'beta') || contains(env.TAG_NAME, 'alpha') }}
