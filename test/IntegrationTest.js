@@ -26,8 +26,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
         {name: 'GERRIT_CHANGE_URL', from: 'url'}
       ],
       templateMappings: [],
-      autostart: true,
-      automaticUpdates: 'always',
       ttlMs: 3600000,
       openAfterCreate: true,
       enableDryRunPreview: false
@@ -83,8 +81,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
           {name: 'GERRIT_PATCHSET', value: '2'},
           {name: 'GERRIT_CHANGE_URL', value: 'https://gerrit.example.com/c/my%2Forg%2Fproject/+/12345/2'}
         ],
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 3600000
       };
 
@@ -186,8 +182,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
           {name: 'GERRIT_PATCHSET', value: '1'},
           {name: 'GERRIT_CHANGE_URL', value: 'https://gerrit.example.com/c/my%2Fproject/+/67890/1'}
         ],
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 3600000
       };
 
@@ -238,8 +232,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
         name: 'test-project-11111-3',
         template_version_id: 'version-456',
         rich_parameter_values: expect.any(Array),
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 3600000
       };
 
@@ -441,8 +433,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
           {name: 'SPECIAL_REPO', value: 'special/org/important-project'},
           {name: 'SPECIAL_BRANCH', value: 'refs/heads/main'}
         ],
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 3600000
       };
 
@@ -494,8 +484,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
         name: 'unmapped-org-project-33333-1',
         template_id: 'template-123', // Default template
         rich_parameter_values: expect.any(Array),
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 3600000
       };
 
@@ -684,7 +672,7 @@ function buildCreateRequest(context, config) {
   const configVersion = config.templateVersionId || '';
 
   // Build request body in the exact property order expected by tests:
-  // name -> template_id/template_version_id -> rich_parameter_values -> automatic_updates -> autostart_schedule -> ttl_ms
+  // name -> template_id/template_version_id -> rich_parameter_values -> ttl_ms
   const ordered = { name };
   if (mappingVersion) {
     ordered.template_version_id = mappingVersion;
@@ -696,10 +684,6 @@ function buildCreateRequest(context, config) {
     ordered.template_version_id = configVersion;
   }
   ordered.rich_parameter_values = toRichParameterValues(context, picked.richParams || config.richParams || []);
-  ordered.automatic_updates = config.automaticUpdates;
-  if (config.autostart) {
-    ordered.autostart_schedule = 'now';
-  }
   ordered.ttl_ms = config.ttlMs;
 
   if (picked.templateVersionPresetId) {

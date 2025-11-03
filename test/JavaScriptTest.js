@@ -26,8 +26,6 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
         {name: 'GERRIT_CHANGE_URL', from: 'url'}
       ],
       templateMappings: [],
-      autostart: true,
-      automaticUpdates: 'always',
       ttlMs: 0,
       openAfterCreate: true,
       enableDryRunPreview: false
@@ -456,8 +454,6 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
           {name: 'REPO', value: 'test/project'},
           {name: 'BRANCH', value: 'refs/heads/main'}
         ],
-        automatic_updates: 'always',
-        autostart_schedule: 'now',
         ttl_ms: 0
       };
 
@@ -719,8 +715,6 @@ async function loadServerConfig(plugin) {
     workspaceNameTemplate: '{repo}-{change}-{patchset}',
     richParams: [],
     templateMappings: [],
-    autostart: true,
-    automaticUpdates: 'always',
     ttlMs: 0,
     openAfterCreate: true,
     enableDryRunPreview: false

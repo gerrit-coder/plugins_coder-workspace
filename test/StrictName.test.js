@@ -1,0 +1,79 @@
+// Prevent plugin auto-install during tests
+window.Gerrit = window.Gerrit || {};
+
+describe('coder-workspace: strictName create behavior', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    require('../plugin.js');
+    if (!window.__coderWorkspaceTest__) throw new Error('__coderWorkspaceTest__ not found');
+    const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
+    setGetWorkspaceByName(undefined);
+    setConfig({
+      serverUrl: 'https://coder.example.com',
+      apiKey: 'k',
+      user: 'lemon',
+      organization: '',
+      strictName: true,
+      workspaceNameTemplate: '{repo}-{change}',
+    });
+    global.fetch = jest.fn();
+  });
+
+  afterEach(() => {
+    const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
+    setGetWorkspaceByName(undefined);
+    setConfig({ serverUrl: '', apiKey: '', user: 'me', organization: '', strictName: false });
+    jest.clearAllMocks();
+  });
+
+  test('strict create: POST success returns created workspace', async () => {
+    const { buildCreateRequest, createWorkspaceStrict } = window.__coderWorkspaceTest__;
+
+    const ctx = { repo: 'gerrit-coder', change: '1', branch: 'refs/heads/main', patchset: '1', url: '' };
+    const body = buildCreateRequest(ctx);
+
+    const ws = { name: 'gerrit-coder-1', owner_name: 'lemon', latest_app_status: null };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(ws) });
+
+    const result = await createWorkspaceStrict(body);
+    expect(result).toEqual(ws);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://coder.example.com/api/v2/users/lemon/workspaces',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  test('strict create: 409 -> fetch existing by name, no auto-suffix', async () => {
+    const { buildCreateRequest, createWorkspaceStrict } = window.__coderWorkspaceTest__;
+    const ctx = { repo: 'gerrit-coder', change: '1', branch: 'refs/heads/main', patchset: '1', url: '' };
+    const body = buildCreateRequest(ctx);
+
+    // POST 409
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 409, text: () => Promise.resolve('Workspace name already exists') });
+    // GET existing by name
+    const ws = { name: 'gerrit-coder-1', owner_name: 'lemon' };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(ws) });
+
+    const result = await createWorkspaceStrict(body);
+    expect(result).toEqual(ws);
+    // Assert singular GET-by-name path used
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  test('strict create: 409 -> existing not visible -> throw', async () => {
+    const { buildCreateRequest, createWorkspaceStrict } = window.__coderWorkspaceTest__;
+    const ctx = { repo: 'gerrit-coder', change: '1', branch: 'refs/heads/main', patchset: '1', url: '' };
+    const body = buildCreateRequest(ctx);
+
+    // POST 409
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 409, text: () => Promise.resolve('Workspace name already exists') });
+    // GET returns 404
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+    await expect(createWorkspaceStrict(body)).rejects.toThrow();
+  });
+});

@@ -36,11 +36,43 @@ public class GetConfig implements RestReadView<ConfigResource> {
     info.templateVersionPresetId = cfg.getString("templateVersionPresetId");
 
     info.workspaceNameTemplate = cfg.getString("workspaceNameTemplate", info.workspaceNameTemplate);
-    info.automaticUpdates = cfg.getString("automaticUpdates", info.automaticUpdates);
-    info.autostart = cfg.getBoolean("autostart", info.autostart);
     info.openAfterCreate = cfg.getBoolean("openAfterCreate", info.openAfterCreate);
     info.enableDryRunPreview = cfg.getBoolean("enableDryRunPreview", info.enableDryRunPreview);
     info.ttlMs = cfg.getLong("ttlMs", info.ttlMs);
+
+    // Optional app slug for deep linking to an app when latest_app_status.uri is not provided
+    String appSlug = cfg.getString("appSlug");
+    if (appSlug != null && !appSlug.trim().isEmpty()) {
+      info.appSlug = appSlug.trim();
+    }
+
+    // alternateNameTemplates: allow either JSON array or comma-separated list
+    String altsJson = cfg.getString("alternateNameTemplatesJson");
+    String altsCsv = cfg.getString("alternateNameTemplates");
+    if (altsJson != null && !altsJson.trim().isEmpty()) {
+      try {
+        String[] arr = gson.fromJson(altsJson, String[].class);
+        if (arr != null) {
+          info.alternateNameTemplates.clear();
+          for (String s : arr) {
+            if (s != null && !s.trim().isEmpty()) info.alternateNameTemplates.add(s.trim());
+          }
+        }
+      } catch (Exception e) {
+        // ignore malformed JSON; fall back to CSV
+      }
+    }
+    if (info.alternateNameTemplates.isEmpty() && altsCsv != null && !altsCsv.trim().isEmpty()) {
+      String[] parts = altsCsv.split(",");
+      for (String p : parts) {
+        String s = p.trim();
+        if (!s.isEmpty()) info.alternateNameTemplates.add(s);
+      }
+    }
+
+    // Readiness polling options
+    info.waitForAppReadyMs = cfg.getLong("waitForAppReadyMs", info.waitForAppReadyMs);
+    info.waitPollIntervalMs = cfg.getLong("waitPollIntervalMs", info.waitPollIntervalMs);
 
     // richParams: comma-separated NAME:from entries
     String rp = cfg.getString("richParams");

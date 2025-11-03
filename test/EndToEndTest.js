@@ -104,8 +104,6 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
         {name: 'GERRIT_CHANGE_URL', from: 'url'}
       ],
       templateMappings: [],
-      autostart: true,
-      automaticUpdates: 'always',
       ttlMs: 3600000,
       openAfterCreate: true,
       enableDryRunPreview: false
@@ -236,8 +234,6 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
         body.template_version_id = cfg.templateVersionId;
       }
       body.rich_parameter_values = toRichValues(ctx, (mapping && mapping.richParams) || cfg.richParams || []);
-      body.automatic_updates = cfg.automaticUpdates;
-      if (cfg.autostart) body.autostart_schedule = 'now';
       body.ttl_ms = cfg.ttlMs;
 
       const createHeaders = { 'Content-Type': 'application/json', 'Accept': 'application/json' };

@@ -24,16 +24,23 @@ public class ConfigInfo {
 
   @SerializedName("workspaceNameTemplate")
   public String workspaceNameTemplate = "{repo}-{change}-{patchset}";
-  @SerializedName("automaticUpdates")
-  public String automaticUpdates = "always";
-  @SerializedName("autostart")
-  public boolean autostart = true;
+  @SerializedName("alternateNameTemplates")
+  public List<String> alternateNameTemplates = new ArrayList<>();
   @SerializedName("openAfterCreate")
   public boolean openAfterCreate = true;
   @SerializedName("enableDryRunPreview")
   public boolean enableDryRunPreview = false;
   @SerializedName("ttlMs")
   public long ttlMs = 0;
+
+  @SerializedName("appSlug")
+  public String appSlug;
+
+  @SerializedName("waitForAppReadyMs")
+  public long waitForAppReadyMs = 0;
+
+  @SerializedName("waitPollIntervalMs")
+  public long waitPollIntervalMs = 1000;
 
   @SerializedName("richParams")
   public List<RichParam> richParams = defaultRichParams();

@@ -41,8 +41,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         {name: 'GERRIT_CHANGE_URL', from: 'url'}
       ],
       templateMappings: [],
-      autostart: true,
-      automaticUpdates: 'always',
       ttlMs: 3600000,
       openAfterCreate: true,
       enableDryRunPreview: false
@@ -373,14 +371,12 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
     test('should validate boolean fields', () => {
       const config = {
         ...mockConfig,
-        autostart: 'invalid',
         openAfterCreate: 'invalid',
         enableDryRunPreview: 'invalid'
       };
       const validation = validateConfiguration(config);
 
       expect(validation.valid).toBe(false);
-      expect(validation.errors).toContain('autostart must be a boolean value');
       expect(validation.errors).toContain('openAfterCreate must be a boolean value');
       expect(validation.errors).toContain('enableDryRunPreview must be a boolean value');
     });
@@ -388,7 +384,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
     test('should accept valid boolean values', () => {
       const config = {
         ...mockConfig,
-        autostart: true,
         openAfterCreate: false,
         enableDryRunPreview: true
       };
@@ -402,34 +397,12 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
     test('should validate string fields are not null', () => {
       const config = {
         ...mockConfig,
-        user: null,
-        automaticUpdates: null
+        user: null
       };
       const validation = validateConfiguration(config);
 
       expect(validation.valid).toBe(false);
       expect(validation.errors).toContain('user cannot be null');
-      expect(validation.errors).toContain('automaticUpdates cannot be null');
-    });
-
-    test('should validate automaticUpdates values', () => {
-      const validValues = ['always', 'never', 'start'];
-      const invalidValues = ['invalid', 'sometimes', 'maybe'];
-
-      validValues.forEach(value => {
-        const config = { ...mockConfig, automaticUpdates: value };
-        const validation = validateConfiguration(config);
-
-        expect(validation.valid).toBe(true);
-      });
-
-      invalidValues.forEach(value => {
-        const config = { ...mockConfig, automaticUpdates: value };
-        const validation = validateConfiguration(config);
-
-        expect(validation.valid).toBe(false);
-        expect(validation.errors).toContain(`Invalid automaticUpdates value: ${value}`);
-      });
     });
   });
 
@@ -463,8 +436,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
             ]
           }
         ],
-        autostart: true,
-        automaticUpdates: 'always',
         ttlMs: 3600000,
         openAfterCreate: true,
         enableDryRunPreview: false
@@ -481,8 +452,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         apiKey: 'test-api-key',
         templateId: 'template-123',
         user: 'testuser',
-        automaticUpdates: 'always',
-        autostart: true,
         openAfterCreate: true,
         enableDryRunPreview: false,
         ttlMs: 0,
@@ -502,8 +471,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         templateVersionId: '',
         user: null,
         ttlMs: -1,
-        autostart: 'invalid',
-        automaticUpdates: 'invalid',
         workspaceNameTemplate: '{invalid_token}',
         richParams: [
           {name: '', from: 'invalid_field'}
@@ -603,16 +570,7 @@ function validateConfiguration(config) {
     errors.push('user cannot be null');
   }
 
-  if (config.automaticUpdates === null || config.automaticUpdates === undefined) {
-    errors.push('automaticUpdates cannot be null');
-  } else if (!['always', 'never', 'start'].includes(config.automaticUpdates)) {
-    errors.push(`Invalid automaticUpdates value: ${config.automaticUpdates}`);
-  }
-
   // Boolean fields
-  if (typeof config.autostart !== 'boolean') {
-    errors.push('autostart must be a boolean value');
-  }
 
   if (typeof config.openAfterCreate !== 'boolean') {
     errors.push('openAfterCreate must be a boolean value');
@@ -713,8 +671,6 @@ async function loadServerConfig(plugin) {
     workspaceNameTemplate: '{repo}-{change}-{patchset}',
     richParams: [],
     templateMappings: [],
-    autostart: true,
-    automaticUpdates: 'always',
     ttlMs: 0,
     openAfterCreate: true,
     enableDryRunPreview: false

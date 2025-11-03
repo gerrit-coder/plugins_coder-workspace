@@ -17,6 +17,7 @@ rich parameters.
 - "Open Coder Workspace" action (open or create-on-demand)
 - "Delete Coder Workspace" action
 - Single workspace management (no history tracking)
+- Exact-name creation mode via `strictName` (enforce precise names from `workspaceNameTemplate`, no suffixing)
 
 ## Configure
 
@@ -36,11 +37,12 @@ Add to `gerrit.config` (example):
   # templateVersionId = 0ba39c92-1f1b-4c32-aa3e-9925d7713eb1
   organization = 7c60d51f-b44e-4682-87d6-449835ea4de6
   user = me
-  autostart = true
-  automaticUpdates = always
   openAfterCreate = true
   enableDryRunPreview = false
   ttlMs = 0
+  # Enforce exact-name creation (optional)
+  workspaceNameTemplate = "{repo}-{change}"
+  strictName = true
   # Map Gerrit fields to template parameter names (optional)
   richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
 
@@ -188,10 +190,75 @@ There is no per-user Settings menu in the UI.
 You can configure:
 - Coder Server URL, API Key (Coder-Session-Token), Organization, User
 - Default Template ID or Template Version ID (+ optional Preset ID)
-- Automatic updates, autostart, TTL, open-after-create
-- Workspace Name Template (tokens: {repo},{branch},{change},{patchset})
+- TTL, open-after-create
+- Workspace Name Template (tokens: {repo},{branch},{branchShort},{change},{patchset})
 - Template Mappings (JSON) via `templateMappingsJson`
 - Rich parameter mapping via `richParams`
+- Exact-name behavior via `strictName`
+
+#### Alternate name lookup and app deeplinks
+
+Two optional settings help the plugin find existing workspaces and open a specific app without rebuilding the UI bundle:
+
+- `alternateNameTemplates` or `alternateNameTemplatesJson`
+   - Lookup-only name templates the plugin will try before creating a workspace.
+   - Supports tokens like `{repo}`, `{branch}`, `{branchShort}`, `{change}`, `{patchset}`.
+   - You can set either a comma-separated list or a JSON array. JSON takes precedence if both are provided.
+   - Examples:
+      ```ini
+      [plugin "coder-workspace"]
+         # CSV
+         alternateNameTemplates = {repo}.{branchShort}, {repo}-{branch}
+
+         # or JSON
+         alternateNameTemplatesJson = ["{repo}.{branchShort}", "{repo}-{branch}"]
+      ```
+
+- `appSlug`
+   - Preferred app to open when Coder's API does not return `latest_app_status.uri`.
+   - The plugin will open `/@<owner>/<workspace>/apps/<appSlug>/`.
+   - Example:
+      ```ini
+      [plugin "coder-workspace"]
+         appSlug = code-server
+      ```
+
+- `waitForAppReadyMs` and `waitPollIntervalMs`
+   - Optional readiness polling before opening the workspace. If `waitForAppReadyMs > 0`, the plugin will poll the workspace by name until `latest_app_status.uri` is available or the timeout elapses. `waitPollIntervalMs` controls the polling interval (default 1000ms).
+   - Example:
+      ```ini
+      [plugin "coder-workspace"]
+         waitForAppReadyMs = 15000
+         waitPollIntervalMs = 1000
+      ```
+
+Notes:
+- If neither alternateNameTemplates nor alternateNameTemplatesJson is set, the plugin defaults to `[{repo}.{branchShort}]` for lookup.
+- These settings are returned by `/config/server/coder-workspace.config`; you can tweak them at runtime without rebuilding the web bundle.
+- If `strictName = true`, alternate name templates are ignored during creation and initial lookup; the plugin creates or opens exactly the primary name from `workspaceNameTemplate`.
+
+### Exact-name mode (strictName)
+
+`strictName` enforces that the workspace name matches your `workspaceNameTemplate` exactly (no auto-suffixing, no reuse via alternates):
+
+- Default is `strictName = false` (flexible mode):
+   - Tries to find an existing workspace by primary name and any `alternateNameTemplates`.
+   - If none found, attempts creation; on HTTP 409 conflict (name already taken but not visible), the plugin may retry with a unique suffix to ensure the user gets a workspace.
+
+- With `strictName = true` (exact-name mode):
+   - The plugin bypasses alternate lookups and prefix searches and attempts to create exactly the primary name.
+   - If the Coder API returns HTTP 409 (name exists), the plugin opens the existing workspace with that exact name.
+   - If the existing workspace is not visible (e.g., different owner or insufficient permissions), the operation fails with a clear error. No automatic suffixing occurs.
+
+Recommended when you expect deterministic names derived from review context (for example, `{repo}-{change}`):
+
+```ini
+[plugin "coder-workspace"]
+   workspaceNameTemplate = "{repo}-{change}"
+   # Optionally remove alternates (or keep only the same primary form)
+   # alternateNameTemplates = {repo}-{change}
+   strictName = true
+```
 
 ### Template Mappings JSON format
 
@@ -314,6 +381,14 @@ This error indicates the plugin cannot read its configuration. Follow these step
    - Verify organization exists
    - Ensure user has access to organization
 
+#### Exact name not created (strictName)
+
+If you expect an exact name (for example, `gerrit-coder-1`) but see a suffixed name or a reuse:
+
+1. Ensure `strictName = true` is set and that your `workspaceNameTemplate` yields the desired name.
+2. Remove or minimize `alternateNameTemplates` to avoid lookups that match other names; with `strictName` they are ignored for creation, but keeping them minimal reduces confusion.
+3. If a 409 conflict occurs and the existing workspace is not visible to you, the plugin will not auto-suffix in `strictName` mode; resolve visibility/ownership or disable `strictName` temporarily to allow a unique name.
+
 #### Configuration not loading
 
 1. **Check gerrit.config syntax:**
@@ -365,6 +440,17 @@ curl -X POST \
      -d '{"name":"test-workspace","template_id":"YOUR_TEMPLATE_ID"}' \
      https://your-coder-instance.com/api/v2/users/me/workspaces
 ```
+
+### Workspace lookup and app deeplinking
+
+If the plugin doesn’t find your existing workspace or opens a non-app page:
+
+- Workspace lookup uses a primary name (from your `workspaceNameTemplate` or mapping) and also tries any templates in `alternateNameTemplates` / `alternateNameTemplatesJson`. Configure these to match your organization’s existing workspace naming (for example `{repo}.{branchShort}`).
+- If `strictName` is enabled, the plugin skips alternates and enforces the exact primary name; on 409 it opens the existing workspace by that name if visible.
+- App deeplinking uses `latest_app_status.uri` when provided by the Coder API. If it’s missing, the plugin falls back to opening `/@<owner>/<workspace>/apps/<appSlug>/`. Set `appSlug` (for example `code-server`) to control which app is opened by default.
+- You can verify both settings at `/config/server/coder-workspace.config`.
+
+Tip: After changing these values in `gerrit.config`, restart Gerrit and hard-refresh your browser to ensure the updated configuration is picked up.
 
 ### Browser Development Setup
 

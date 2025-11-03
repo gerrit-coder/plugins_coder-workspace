@@ -1,5 +1,6 @@
 .env
 .idea/
+gerrit.config
 package-lock.json
 
 test/node_modules/

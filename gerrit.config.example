@@ -23,14 +23,18 @@
   user = YOUR_USERNAME
 
   # Workspace behavior settings
-  autostart = true
-  automaticUpdates = always
   openAfterCreate = true
   enableDryRunPreview = false
   ttlMs = 0
 
-  # Workspace naming template (tokens: {repo}, {branch}, {change}, {patchset})
+  # Workspace naming template (tokens: {repo}, {branch}, {branchShort}, {change}, {patchset})
   workspaceNameTemplate = "{repo}-{change}-{patchset}"
+
+  # Strict name behavior (optional)
+  # When true, the plugin will create exactly the name from workspaceNameTemplate
+  # without trying to reuse alternates or auto-suffix on 409. If a workspace with
+  # that name already exists, it will be opened; otherwise the 409 error is surfaced.
+  # strictName = false
 
   # Rich parameter mapping (maps Gerrit context to template parameters)
   richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
@@ -40,3 +44,18 @@
   #   {"repo":"my/org/*","branch":"refs/heads/main","templateVersionId":"0ba39c92-1f1b-4c32-aa3e-9925d7713eb1"},
   #   {"repo":"another/repo","branch":"refs/heads/*","templateId":"c6d67e98-83ea-49f0-8812-e4abae2b68bc"}
   # ]
+
+  # Optional: additional name templates to try when looking up existing workspaces
+  # These are lookup-only; they are not used for creation.
+  # To force exact-name creation and avoid reuse, either set strictName=true or
+  # remove alternates entirely (or keep only {repo}-{change}).
+  # alternateNameTemplates = {repo}.{branchShort}, {repo}-{branch}
+  # or, as JSON (takes precedence if both are set):
+  # alternateNameTemplatesJson = ["{repo}.{branchShort}", "{repo}-{branch}"]
+
+  # Optional: preferred app to open when latest_app_status.uri is not provided by API
+  # appSlug = code-server
+
+  # Optional: wait for app readiness before opening (0 disables waiting)
+  # waitForAppReadyMs = 15000
+  # waitPollIntervalMs = 1000
