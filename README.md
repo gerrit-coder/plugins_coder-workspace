@@ -244,23 +244,6 @@ This action is always available. A short toast indicates the context when openin
 
 Deletes your Coder workspace for the current context. You will be asked to confirm the deletion.
 
-### Mock server (optional)
-
-For local/manual testing without a real Coder instance, see `plugins/coder-workspace/mock-server.md` for a minimal mock endpoint you can run to validate requests from the plugin.
-
-## Test Environment
-
-For a complete test environment setup, see the `test/` directory in this repository:
-
-```bash
-cd test/
-cp env.example .env
-# Edit .env with your values
-./run.sh
-```
-
-This will set up both Coder and the plugin with proper configuration automatically.
-
 ## Troubleshooting
 
 ### Common Issues
@@ -436,6 +419,75 @@ For additional support, include:
 - Coder version
 - Error messages from logs
 - Browser console output
+
+## Tests
+
+### Run JavaScript tests (Jest)
+
+The plugin includes a Jest-based test suite for the web UI logic under `plugins/coder-workspace/test`.
+
+Prerequisites:
+- Node.js 18+ and npm
+
+### Setup
+
+1. **Copy environment template:**
+   ```bash
+   cd plugins/coder-workspace/test
+   cp env.example .env
+   ```
+
+2. **Configure `.env` file:**
+
+   The `env.example` file supports both mock and real API testing scenarios:
+
+   **For Mock Testing (default, no external services required):**
+   ```bash
+   TEST_MODE="mock"
+   GERRIT_URL="http://127.0.0.1:8080"
+   CODER_URL="http://127.0.0.1:3000"
+   ```
+
+   **For Real API Testing (connects to deployed servers):**
+   ```bash
+   TEST_MODE="real"
+   GERRIT_URL="https://gerrit.yourcompany.com"
+   CODER_URL="https://coder.yourcompany.com"
+   CODER_SESSION_TOKEN="your-coder-session-token"
+   CODER_ORGANIZATION="your-organization-id"  # Optional
+   PLUGIN_CODER_SERVER_URL="https://coder.yourcompany.com"
+   PLUGIN_CODER_API_KEY="your-coder-session-token"
+   PLUGIN_TEMPLATE_ID="your-template-id"
+   ```
+
+   See `plugins/coder-workspace/test/env.example` for all available configuration options and examples.
+
+### Run Tests
+
+```bash
+# From the Gerrit repo root
+cd plugins/coder-workspace/test
+npm install
+
+# Run all tests
+npm test
+
+# Useful subsets
+npm run test:unit          # Core JS unit tests
+npm run test:integration   # Coder API integration tests (mocked by default)
+npm run test:e2e           # End-to-end UI flow tests (jsdom)
+npm run test:config        # Configuration validation tests
+
+# Coverage report
+npm run test:coverage
+```
+
+### Test Modes
+
+- **Mock Mode** (default): All API calls are mocked. No external services required. Fast and suitable for CI/CD.
+- **Real Mode**: Connects to actual Gerrit and Coder servers via REST API. Requires valid credentials and network access.
+
+**Note:** The test suite references `test/env.example` (from the parent `test/` directory) for compatibility with the full test environment setup. The plugin-specific `env.example` provides additional configuration for plugin-specific testing scenarios.
 
 ## Get the Gerrit source
 

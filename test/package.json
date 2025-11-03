@@ -1,0 +1,52 @@
+{
+  "name": "coder-workspace-plugin-tests",
+  "version": "1.0.0",
+  "description": "Test suite for Coder Workspace Gerrit Plugin",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest --testPathPattern=JavaScriptTest|JavaTest",
+    "test:integration": "jest --testPathPattern=IntegrationTest",
+    "test:e2e": "jest --testPathPattern=EndToEndTest",
+    "test:config": "jest --testPathPattern=ConfigurationValidationTest"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "@babel/core": "^7.20.0",
+    "@babel/preset-env": "^7.20.0",
+    "babel-jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": [
+      "**/test/!(setup).js"
+    ],
+    "setupFilesAfterEnv": [
+      "./setup.js"
+    ],
+    "collectCoverageFrom": [
+      "**/*.js",
+      "!**/node_modules/**",
+      "!**/test/**",
+      "!**/coverage/**"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "coverageDirectory": "coverage",
+    "verbose": true
+  },
+  "babel": {
+    "presets": [
+      ["@babel/preset-env", {
+        "targets": {
+          "node": "current"
+        }
+      }]
+    ]
+  }
+}
