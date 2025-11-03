@@ -60,8 +60,8 @@
     let patchset = '';
 
     const changeEl = grApp && grApp.shadowRoot && grApp.shadowRoot.querySelector('gr-change-view');
-  const change = changeEl && changeEl.change;
-  const currentRevision = changeEl && changeEl.currentRevision;
+    const change = changeEl && changeEl.change;
+    const currentRevision = changeEl && changeEl.currentRevision;
     if (change) {
       project = change.project || '';
       branch = change.branch || '';
@@ -89,6 +89,16 @@
         patchset = patchset || (m[3] || '');
       }
     }
+
+    // Debug logging to help diagnose context extraction issues
+    console.log('[coder-workspace] Change context extracted:', {
+      repo: project,
+      branch: branch,
+      change: changeNum,
+      patchset: patchset,
+      url: location.href
+    });
+
     const origin = window.location.origin;
     const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}/${patchset}`;
     return {repo: project, branch, change: changeNum, patchset, url};
@@ -144,12 +154,22 @@
   }
 
   function renderNameTemplate(tpl, ctx) {
-    return String(tpl)
+    const name = String(tpl)
       .replaceAll('{repo}', String(ctx.repo || ''))
       .replaceAll('{branch}', String(ctx.branch || ''))
       .replaceAll('{change}', String(ctx.change || ''))
       .replaceAll('{patchset}', String(ctx.patchset || ''))
-      .replace(/[^A-Za-z0-9._-]+/g, '-');
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')  // Remove leading/trailing dashes
+      .replace(/-{2,}/g, '-');   // Collapse multiple dashes to single dash
+
+    // Ensure name is not empty and meets minimum requirements
+    if (!name || name === '-') {
+      // Fallback to a timestamp-based name if all context values are empty
+      return 'workspace-' + Date.now();
+    }
+
+    return name;
   }
 
   async function createWorkspace(requestBody) {
@@ -316,6 +336,14 @@
         changeActions.addTapListener(openLastKey, async () => {
           try {
             const ctx = getChangeContextFromPage();
+
+            // Validate that we have minimum required context
+            if (!ctx.repo || !ctx.change) {
+              notify(plugin, 'Unable to determine change context. Please ensure you are on a valid change page.');
+              console.error('[coder-workspace] Invalid context:', ctx);
+              return;
+            }
+
             const currentUrl = loadCurrentWorkspace();
             const currentMeta = loadCurrentMeta();
 
