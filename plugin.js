@@ -837,10 +837,9 @@
               if (!confirmed) return;
             }
 
-            try {
+                try {
               const ws = await createWorkspace(body);
               console.log(`[coder-workspace] Successfully created workspace:`, ws);
-              // Open immediately to avoid popup blockers after async waits
               const baseMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws && ws.name, workspaceOwner: ws && ws.owner_name};
               const initialUrl = computeWorkspaceUrl(ws);
               notify(plugin, `Coder workspace created: ${ws.name}`);
@@ -891,7 +890,16 @@
                   const initialUrl = computeWorkspaceUrl(existing);
                   saveCurrentWorkspace(initialUrl, baseMeta);
                   notify(plugin, `Opening existing Coder workspace: ${existing.name}`);
-                  openFinalUrl(initialUrl);
+                  if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
+                    try {
+                      const ready = await waitForWorkspaceApp(existing.name, config.waitForAppReadyMs, config.waitPollIntervalMs, existing) || existing;
+                      const urlToOpen = computeWorkspaceUrl(ready || existing);
+                      saveCurrentWorkspace(urlToOpen, baseMeta);
+                      openFinalUrl(urlToOpen);
+                    } catch (_) { openFinalUrl(initialUrl); }
+                  } else {
+                    openFinalUrl(initialUrl);
+                  }
 
                   if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
                     notify(plugin, `Waiting for Coder workspace app to be ready…`);

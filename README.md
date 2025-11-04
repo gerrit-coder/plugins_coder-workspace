@@ -117,23 +117,6 @@ Example responses:
 ```json
 [
   {
-    "id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
-    "name": "my-template",
-    "display_name": "My Development Template"
-  }
-]
-```
-
-#### Option B: Get Template Version ID (for specific version)
-```bash
-curl -H "Coder-Session-Token: YOUR_TOKEN" \
-     https://your-coder-instance.com/api/v2/templates/TEMPLATE_ID/versions
-```
-
-Example responses:
-```json
-[
-  {
     "id": "0ba39c92-1f1b-4c32-aa3e-9925d7713eb1",
     "template_id": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
     "name": "v1.0.0",
@@ -257,8 +240,6 @@ Notes:
 
 - With `strictName = true` (exact-name mode):
    - The plugin bypasses alternate lookups and prefix searches and attempts to create exactly the primary name.
-   - If the Coder API returns HTTP 409 (name exists), the plugin opens the existing workspace with that exact name.
-   - If the existing workspace is not visible (e.g., different owner or insufficient permissions), the operation fails with a clear error. No automatic suffixing occurs.
 
 Recommended when you expect deterministic names derived from review context (for example, `{repo}-{change}`):
 
@@ -327,14 +308,9 @@ Deletes your Coder workspace for the current context. You will be asked to confi
 
 #### "Coder Workspace plugin is not configured (serverUrl is empty)"
 
-This error indicates the plugin cannot read its configuration. Follow these steps:
-
-1. **Check plugin installation:**
    ```bash
    ls -la $GERRIT_SITE/plugins/coder-workspace.jar
    ```
-
-2. **Verify configuration endpoint:**
    Visit `http://your-gerrit-server/config/server/coder-workspace.config`
 
    **Expected result:** JSON response with your configuration
@@ -350,11 +326,6 @@ This error indicates the plugin cannot read its configuration. Follow these step
    $GERRIT_SITE/bin/gerrit.sh restart
    ```
 
-5. **Clear browser cache:**
-   - Hard refresh: Ctrl+F5 (Windows/Linux) or Cmd+Shift+R (Mac)
-   - Or clear browser cache completely
-
-#### Plugin not appearing in change page
 
 1. **Verify plugin is enabled:**
    ```ini
@@ -363,7 +334,6 @@ This error indicates the plugin cannot read its configuration. Follow these step
    ```
 
 2. **Check plugin list:**
-   Visit `http://your-gerrit-server/plugins/`
    Look for `coder-workspace` in the list
 
 3. **Check Gerrit logs:**
@@ -409,10 +379,8 @@ Security note: Only enable `appendTokenToAppUrl` in trusted environments, since 
 #### Exact name not created (strictName)
 
 If you expect an exact name (for example, `gerrit-coder-1`) but see a suffixed name or a reuse:
-
-1. Ensure `strictName = true` is set and that your `workspaceNameTemplate` yields the desired name.
-2. Remove or minimize `alternateNameTemplates` to avoid lookups that match other names; with `strictName` they are ignored for creation, but keeping them minimal reduces confusion.
-3. If a 409 conflict occurs and the existing workspace is not visible to you, the plugin will not auto-suffix in `strictName` mode; resolve visibility/ownership or disable `strictName` temporarily to allow a unique name.
+1. Remove or minimize `alternateNameTemplates` to avoid lookups that match other names; with `strictName` they are ignored for creation, but keeping them minimal reduces confusion.
+2. If a 409 conflict occurs and the existing workspace is not visible to you, the plugin will not auto-suffix in `strictName` mode; resolve visibility/ownership or disable `strictName` temporarily to allow a unique name.
 
 #### Configuration not loading
 
@@ -476,7 +444,7 @@ If the plugin doesn’t find your existing workspace or opens a non-app page:
 - You can verify both settings at `/config/server/coder-workspace.config`.
 
 Opening behavior:
-- The plugin opens a single final URL. If `waitForAppReadyMs > 0`, it waits for the app URI to become available and then opens; no placeholder/blank tab is created.
+- By default, the plugin opens a single final URL. If `waitForAppReadyMs > 0`, it waits for the app URI to become available and then opens.
 
 Tip: After changing these values in `gerrit.config`, restart Gerrit and hard-refresh your browser to ensure the updated configuration is picked up.
 
