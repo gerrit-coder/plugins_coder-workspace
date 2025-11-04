@@ -311,6 +311,7 @@ Deletes your Coder workspace for the current context. You will be asked to confi
    ```bash
    ls -la $GERRIT_SITE/plugins/coder-workspace.jar
    ```
+
    Visit `http://your-gerrit-server/config/server/coder-workspace.config`
 
    **Expected result:** JSON response with your configuration
@@ -445,6 +446,7 @@ If the plugin doesn’t find your existing workspace or opens a non-app page:
 
 Opening behavior:
 - By default, the plugin opens a single final URL. If `waitForAppReadyMs > 0`, it waits for the app URI to become available and then opens.
+- If your browser blocks opening a new tab after the wait, set `navigateInSameTabOnBlock = true` to fall back to navigating in the same tab automatically.
 
 Tip: After changing these values in `gerrit.config`, restart Gerrit and hard-refresh your browser to ensure the updated configuration is picked up.
 

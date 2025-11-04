@@ -51,6 +51,13 @@
     apiKeyQueryParamName: 'coder_session_token',
     // Optionally append the API key to the app URL when opening (only if you trust the environment)
     appendTokenToAppUrl: false,
+
+    // Some browsers block window.open() if not invoked immediately in a user gesture.
+    // When true, we open a placeholder tab right away on click and later redirect it
+    // to the final URL once known, avoiding popup blockers.
+    // If a popup is blocked when trying to open a new tab after async work,
+    // optionally navigate in the same tab as a fallback.
+    navigateInSameTabOnBlock: true,
   };
 
   // Keep a hardcoded default for alternates so server-provided empty arrays
@@ -524,7 +531,27 @@
   function openFinalUrl(url) {
     const final = config.appendTokenToAppUrl ? withAuthUrl(url) : url;
     console.log('[coder-workspace] Navigating to URL:', final);
-    try { window.open(final, '_blank', 'noopener'); return true; } catch (_) { return false; }
+    try {
+      const w = window.open(final, '_blank', 'noopener');
+      if (w && !w.closed) return true;
+    } catch (_) {
+      // ignore and attempt fallback
+    }
+    // If blocked or null/undefined, fall back to same-tab navigation if enabled
+    if (config.navigateInSameTabOnBlock) {
+      try {
+        // Lightweight toast without requiring plugin instance
+        try {
+          const el = document.createElement('gr-alert');
+          el.text = 'Opening in this tab due to popup blocker';
+          document.body.appendChild(el);
+          setTimeout(() => { try { el.remove(); } catch(_){} }, 4000);
+        } catch (_) {}
+        window.location.assign(final);
+        return true;
+      } catch (_) { /* fall through */ }
+    }
+    return false;
   }
 
   async function waitForWorkspaceApp(name, timeoutMs, intervalMs, initialWs) {

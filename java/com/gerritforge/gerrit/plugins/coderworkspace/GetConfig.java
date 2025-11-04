@@ -119,6 +119,9 @@ public class GetConfig implements RestReadView<ConfigResource> {
     }
     info.appendTokenToAppUrl = cfg.getBoolean("appendTokenToAppUrl", info.appendTokenToAppUrl);
 
+    // Popup-blocker mitigation: open a placeholder tab immediately and redirect later
+    info.navigateInSameTabOnBlock = cfg.getBoolean("navigateInSameTabOnBlock", info.navigateInSameTabOnBlock);
+
     return Response.ok(info);
   }
 }

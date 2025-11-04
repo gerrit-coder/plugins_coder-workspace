@@ -67,3 +67,6 @@
   apiKeyQueryParamName = coder_session_token
   # Append token to app deeplink URL when opening (use only in trusted environments)
   appendTokenToAppUrl = false
+
+  # On popup-block: navigate in the same tab as a fallback
+  navigateInSameTabOnBlock = true

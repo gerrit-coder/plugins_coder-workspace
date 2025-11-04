@@ -57,6 +57,9 @@ public class ConfigInfo {
   @SerializedName("appendTokenToAppUrl")
   public boolean appendTokenToAppUrl = false;
 
+  @SerializedName("navigateInSameTabOnBlock")
+  public boolean navigateInSameTabOnBlock = true;
+
   public static class RichParam {
     public String name;
     public String from;
