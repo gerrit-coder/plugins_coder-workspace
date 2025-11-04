@@ -43,14 +43,17 @@ describe('coder-workspace: strictName create behavior', () => {
     );
   });
 
-  test('strict create: 409 -> fetch existing by name, no auto-suffix', async () => {
+  test('strict create: 409 -> fetch existing by name (singular per docs), no auto-suffix', async () => {
     const { buildCreateRequest, createWorkspaceStrict } = window.__coderWorkspaceTest__;
     const ctx = { repo: 'gerrit-coder', change: '1', branch: 'refs/heads/main', patchset: '1', url: '' };
     const body = buildCreateRequest(ctx);
 
+    // Suppress expected warning log from 409 path during test output
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
     // POST 409
     global.fetch.mockResolvedValueOnce({ ok: false, status: 409, text: () => Promise.resolve('Workspace name already exists') });
-    // GET existing by name
+  // GET existing by name (singular endpoint succeeds)
     const ws = { name: 'gerrit-coder-1', owner_name: 'lemon' };
     global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(ws) });
 
@@ -62,6 +65,8 @@ describe('coder-workspace: strictName create behavior', () => {
       'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
       expect.objectContaining({ method: 'GET' })
     );
+
+    warnSpy.mockRestore();
   });
 
   test('strict create: 409 -> existing not visible -> throw', async () => {
@@ -69,11 +74,16 @@ describe('coder-workspace: strictName create behavior', () => {
     const ctx = { repo: 'gerrit-coder', change: '1', branch: 'refs/heads/main', patchset: '1', url: '' };
     const body = buildCreateRequest(ctx);
 
+    // Suppress expected warnings from 409/conflict handling to keep output clean
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
     // POST 409
     global.fetch.mockResolvedValueOnce({ ok: false, status: 409, text: () => Promise.resolve('Workspace name already exists') });
     // GET returns 404
     global.fetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
     await expect(createWorkspaceStrict(body)).rejects.toThrow();
+
+    warnSpy.mockRestore();
   });
 });

@@ -18,6 +18,7 @@ rich parameters.
 - "Delete Coder Workspace" action
 - Single workspace management (no history tracking)
 - Exact-name creation mode via `strictName` (enforce precise names from `workspaceNameTemplate`, no suffixing)
+- Cross-browser authentication helpers to avoid login redirects when Coder and Gerrit are in different browsers
 
 ## Configure
 
@@ -51,6 +52,14 @@ Add to `gerrit.config` (example):
     {"repo":"my/org/*","branch":"refs/heads/main","templateVersionId":"0ba39c92-1f1b-4c32-aa3e-9925d7713eb1","templateVersionPresetId":"512a53a7-30da-446e-a1fc-713c630baff1"},
     {"repo":"another/repo","branch":"refs/heads/*","templateId":"c6d67e98-83ea-49f0-8812-e4abae2b68bc"}
   ]
+
+  # Cross-browser authentication (optional)
+  # Retries API requests with the API key as a query parameter on 401/network errors
+  retryAuthWithQueryParam = true
+  # Name of the query parameter for the token if retried
+  apiKeyQueryParamName = coder_session_token
+  # Append token to app deeplink URL when opening (use only in trusted environments)
+  appendTokenToAppUrl = false
 ```
 
 **Option 2: Production Setup**
@@ -195,6 +204,7 @@ You can configure:
 - Template Mappings (JSON) via `templateMappingsJson`
 - Rich parameter mapping via `richParams`
 - Exact-name behavior via `strictName`
+- Cross-browser auth helpers: `retryAuthWithQueryParam`, `apiKeyQueryParamName`, `appendTokenToAppUrl`
 
 #### Alternate name lookup and app deeplinks
 
@@ -381,6 +391,21 @@ This error indicates the plugin cannot read its configuration. Follow these step
    - Verify organization exists
    - Ensure user has access to organization
 
+#### Cross-browser login redirect (Coder and Gerrit in different browsers)
+
+If Gerrit is opened in a browser that isn’t logged into Coder, API calls may return 401 and app deeplinks may redirect to login.
+
+Mitigations supported by the plugin:
+
+1. API requests
+   - The plugin sends your API key in the `Coder-Session-Token` header by default.
+   - If `retryAuthWithQueryParam = true`, it will automatically retry failed requests by appending the token as a query parameter (name controlled by `apiKeyQueryParamName`, default `coder_session_token`).
+
+2. App deeplinks
+   - If `appendTokenToAppUrl = true`, the plugin appends the token to the app URL so opening from a non-authenticated browser works without a redirect.
+
+Security note: Only enable `appendTokenToAppUrl` in trusted environments, since tokens in URLs can appear in history and server logs. Disable it once you’re logged into Coder in the same browser.
+
 #### Exact name not created (strictName)
 
 If you expect an exact name (for example, `gerrit-coder-1`) but see a suffixed name or a reuse:
@@ -449,6 +474,9 @@ If the plugin doesn’t find your existing workspace or opens a non-app page:
 - If `strictName` is enabled, the plugin skips alternates and enforces the exact primary name; on 409 it opens the existing workspace by that name if visible.
 - App deeplinking uses `latest_app_status.uri` when provided by the Coder API. If it’s missing, the plugin falls back to opening `/@<owner>/<workspace>/apps/<appSlug>/`. Set `appSlug` (for example `code-server`) to control which app is opened by default.
 - You can verify both settings at `/config/server/coder-workspace.config`.
+
+Opening behavior:
+- The plugin opens a single final URL. If `waitForAppReadyMs > 0`, it waits for the app URI to become available and then opens; no placeholder/blank tab is created.
 
 Tip: After changing these values in `gerrit.config`, restart Gerrit and hard-refresh your browser to ensure the updated configuration is picked up.
 

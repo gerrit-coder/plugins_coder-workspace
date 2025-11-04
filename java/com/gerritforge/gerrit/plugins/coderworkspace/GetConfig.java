@@ -110,6 +110,15 @@ public class GetConfig implements RestReadView<ConfigResource> {
       }
     }
 
+    // Auth helpers
+    info.retryAuthWithQueryParam =
+        cfg.getBoolean("retryAuthWithQueryParam", info.retryAuthWithQueryParam);
+    String qpName = cfg.getString("apiKeyQueryParamName");
+    if (qpName != null && !qpName.trim().isEmpty()) {
+      info.apiKeyQueryParamName = qpName.trim();
+    }
+    info.appendTokenToAppUrl = cfg.getBoolean("appendTokenToAppUrl", info.appendTokenToAppUrl);
+
     return Response.ok(info);
   }
 }

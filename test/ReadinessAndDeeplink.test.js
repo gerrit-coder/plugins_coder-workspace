@@ -83,4 +83,27 @@ describe('coder-workspace: readiness polling and deeplink computation', () => {
     expect(unique).toMatch(/^my-repo-invalid-name-[a-z0-9]+$/);
     expect(unique.length).toBeLessThanOrEqual(63);
   });
+
+  test('openFinalUrl appends coder_session_token when enabled', () => {
+    const { setConfig, openFinalUrl } = window.__coderWorkspaceTest__;
+
+    // Spy on window.open
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => ({}));
+
+    setConfig({
+      serverUrl: 'https://coder.example.com',
+      apiKey: 'abc123',
+      appendTokenToAppUrl: true,
+    });
+
+    const appUrl = 'https://coder.example.com/@lemon/gerrit-coder-1/apps/code-server/';
+    openFinalUrl(appUrl);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const calledUrl = openSpy.mock.calls[0][0];
+    expect(calledUrl).toMatch(/^https:\/\/coder\.example\.com\/@lemon\/gerrit-coder-1\/apps\/code-server\//);
+    expect(calledUrl).toContain('coder_session_token=abc123');
+
+    openSpy.mockRestore();
+  });
 });

@@ -59,3 +59,11 @@
   # Optional: wait for app readiness before opening (0 disables waiting)
   # waitForAppReadyMs = 15000
   # waitPollIntervalMs = 1000
+
+  # Cross-browser authentication helpers (optional)
+  # Retries API requests with the API token as a query parameter on 401/network errors
+  retryAuthWithQueryParam = true
+  # Name of the query parameter for the token if retried
+  apiKeyQueryParamName = coder_session_token
+  # Append token to app deeplink URL when opening (use only in trusted environments)
+  appendTokenToAppUrl = false

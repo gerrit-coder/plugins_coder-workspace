@@ -43,6 +43,14 @@
     // When true: do not reuse existing candidates or prefix search; create exact name from template.
     // On 409 conflict: do NOT auto-suffix; instead try opening the existing workspace by that name.
     strictName: false,
+
+    // Auth/cross-origin helpers
+    // If API returns 401 requiring cookie or query param, retry request by appending the API key as a query parameter.
+    retryAuthWithQueryParam: true,
+    // Query parameter name to use for API key when retrying (server logs mention coder_session_token)
+    apiKeyQueryParamName: 'coder_session_token',
+    // Optionally append the API key to the app URL when opening (only if you trust the environment)
+    appendTokenToAppUrl: false,
   };
 
   // Keep a hardcoded default for alternates so server-provided empty arrays
@@ -51,6 +59,64 @@
 
   const STORAGE_CURRENT_WORKSPACE_KEY = 'gerrit-coder-workspace-current';
   const STORAGE_CURRENT_META_KEY = 'gerrit-coder-workspace-current-meta';
+
+  function withAuthUrl(url) {
+    try {
+      if (!config || !config.apiKey || !config.retryAuthWithQueryParam) return url;
+      const u = new URL(url, resolveCoderUrl('/'));
+      const qp = String(config.apiKeyQueryParamName || 'coder_session_token');
+      if (!u.searchParams.has(qp)) u.searchParams.set(qp, config.apiKey);
+      return u.toString();
+    } catch (_) {
+      return url;
+    }
+  }
+
+  async function fetchWithAuth(url, options) {
+    const opts = Object.assign({ method: 'GET' }, options || {});
+    const headers = Object.assign({}, opts.headers || {});
+    // If using API key auth, always prefer header and explicitly OMIT cookies to avoid CSRF
+    if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
+    headers['Accept'] = headers['Accept'] || 'application/json';
+    opts.headers = headers;
+    // Credentials handling:
+    // - When apiKey is present, force omit cookies so server doesn't see both cookie and header (avoids CSRF 400)
+    // - When no apiKey, allow cookies so a logged-in session can be used
+    if (!('credentials' in opts)) {
+      opts.credentials = config.apiKey ? 'omit' : 'include';
+    }
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      // Network/preflight errors won't give us a 401 to inspect; try query-param retry if enabled
+      if (config.apiKey && config.retryAuthWithQueryParam) {
+        const retryUrl = withAuthUrl(url);
+        try { return await fetch(retryUrl, Object.assign({}, opts, { headers, credentials: 'omit' })); } catch (e2) { throw e2; }
+      }
+      throw e;
+    }
+    if (res && res.status === 401 && config.apiKey && config.retryAuthWithQueryParam) {
+      const retryUrl = withAuthUrl(url);
+      if (retryUrl !== url) {
+        return await fetch(retryUrl, Object.assign({}, opts, { headers, credentials: 'omit' }));
+      }
+    }
+    // Handle CSRF 400 specifically when both cookie and header may have been detected by server
+    if (res && res.status === 400) {
+      try {
+        const text = await res.clone().text();
+        if (/CSRF error encountered/i.test(text) && config.apiKey) {
+          // Retry without header but using query param, still omitting cookies
+          const retryHeaders = Object.assign({}, headers);
+          delete retryHeaders['Coder-Session-Token'];
+          const retryUrl = withAuthUrl(url);
+          return await fetch(retryUrl, Object.assign({}, opts, { headers: retryHeaders, credentials: 'omit' }));
+        }
+      } catch (_) {}
+    }
+    return res;
+  }
 
   function resolveCoderUrl(path) {
     return (config.serverUrl || '').replace(/\/$/, '') + path;
@@ -264,7 +330,7 @@
     }
 
     try {
-      const res = await fetch(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
+      const res = await fetchWithAuth(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
       if (!res.ok) {
         const text = await res.text();
         if (res.status === 409) {
@@ -310,60 +376,87 @@
     const base = (config.serverUrl || '').replace(/\/$/, '');
     const userSeg = encodeURIComponent(config.user || 'me');
     const nameSeg = encodeURIComponent(workspaceName);
-    // Per Coder API: GET-by-name is under /api/v2/users/{user}/workspace/{workspacename} (singular "workspace")
-    const byNameUrl = `${base}/api/v2/users/${userSeg}/workspace/${nameSeg}`;
+
+    // Try multiple API shapes for robustness and org support
+    const candidates = [];
+    // Per Coder API docs, the supported by-name endpoint is singular:
+    // GET /api/v2/users/{user}/workspace/{workspacename}
+    candidates.push(`${base}/api/v2/users/${userSeg}/workspace/${nameSeg}`);
 
     try {
-      const res = await fetch(byNameUrl, { method: 'GET', headers });
-      if (res.status === 404) {
-        // Fallback 1: use global list API with owner+name query, then filter exact match
+      // Try each endpoint variant until one succeeds or all 404
+      let lastStatus = 0;
+      for (const url of candidates) {
+        try {
+          const r = await fetchWithAuth(url, { method: 'GET', headers });
+          lastStatus = r.status;
+          if (r.status === 404) {
+            continue; // try next variant
+          }
+          if (!r.ok) {
+            const text = await r.text().catch(() => '');
+            console.warn(`[coder-workspace] GET workspace by name failed: ${r.status} ${text} at ${url}`);
+            continue;
+          }
+          return await r.json();
+        } catch (e) {
+          console.warn(`[coder-workspace] GET workspace by name error at ${url}:`, e);
+        }
+      }
+      if (lastStatus === 404) {
+        // Fallback 1: use list API(s) with owner+name query, then filter exact match
         const ownerToken = (config.user && config.user !== 'me') ? `owner:${config.user}` : '';
         const qParts = [];
         if (ownerToken) qParts.push(ownerToken);
         qParts.push(`name:${workspaceName}`);
         const q1 = qParts.join(' ');
-        const listUrl1 = `${base}/api/v2/workspaces?q=${encodeURIComponent(q1)}&limit=10`;
-        try {
-          const listRes1 = await fetch(listUrl1, { method: 'GET', headers });
-          if (listRes1.ok) {
-            const payload1 = await listRes1.json().catch(() => null);
-            const items1 = payload1 && (Array.isArray(payload1.workspaces) ? payload1.workspaces : Array.isArray(payload1) ? payload1 : []);
-            // Prefer exact owner match if available, else any name match
-            let hit = null;
-            if (Array.isArray(items1) && items1.length) {
-              hit = items1.find(w => w && w.name === workspaceName && (!config.user || config.user === 'me' || w.owner_name === config.user))
-                 || items1.find(w => w && w.name === workspaceName) || null;
+        const listCandidates1 = [];
+        // Organization-scoped list routes may not exist on all installs; prefer global list first
+        listCandidates1.push(`${base}/api/v2/workspaces?q=${encodeURIComponent(q1)}&limit=10`);
+        if (config.organization) listCandidates1.push(`${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/workspaces?q=${encodeURIComponent(q1)}&limit=10`);
+        for (const listUrl1 of listCandidates1) {
+          try {
+            const listRes1 = await fetchWithAuth(listUrl1, { method: 'GET', headers });
+            if (listRes1.ok) {
+              const payload1 = await listRes1.json().catch(() => null);
+              const items1 = payload1 && (Array.isArray(payload1.workspaces) ? payload1.workspaces : Array.isArray(payload1) ? payload1 : []);
+              // Prefer exact owner match if available, else any name match
+              let hit = null;
+              if (Array.isArray(items1) && items1.length) {
+                hit = items1.find(w => w && w.name === workspaceName && (!config.user || config.user === 'me' || w.owner_name === config.user))
+                   || items1.find(w => w && w.name === workspaceName) || null;
+              }
+              if (hit) return hit;
             }
-            if (hit) return hit;
+          } catch (e) {
+            console.warn('[coder-workspace] Fallback list+filter lookup (owner+name) failed:', e);
           }
-        } catch (e) {
-          console.warn('[coder-workspace] Fallback list+filter lookup (owner+name) failed:', e);
         }
 
-        // Fallback 2: name-only search across visible workspaces
-        try {
-          const q2 = `name:${workspaceName}`;
-          const listUrl2 = `${base}/api/v2/workspaces?q=${encodeURIComponent(q2)}&limit=10`;
-          const listRes2 = await fetch(listUrl2, { method: 'GET', headers });
-          if (listRes2.ok) {
-            const payload2 = await listRes2.json().catch(() => null);
-            const items2 = payload2 && (Array.isArray(payload2.workspaces) ? payload2.workspaces : Array.isArray(payload2) ? payload2 : []);
-            const hit2 = Array.isArray(items2) ? items2.find(w => w && w.name === workspaceName) : null;
-            if (hit2) return hit2;
+        // Fallback 2: name-only search across visible workspaces (org then global)
+        const q2 = `name:${workspaceName}`;
+        const listCandidates2 = [];
+        listCandidates2.push(`${base}/api/v2/workspaces?q=${encodeURIComponent(q2)}&limit=10`);
+        if (config.organization) listCandidates2.push(`${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/workspaces?q=${encodeURIComponent(q2)}&limit=10`);
+        for (const listUrl2 of listCandidates2) {
+          try {
+            const listRes2 = await fetchWithAuth(listUrl2, { method: 'GET', headers });
+            if (listRes2.ok) {
+              const payload2 = await listRes2.json().catch(() => null);
+              const items2 = payload2 && (Array.isArray(payload2.workspaces) ? payload2.workspaces : Array.isArray(payload2) ? payload2 : []);
+              const hit2 = Array.isArray(items2) ? items2.find(w => w && w.name === workspaceName) : null;
+              if (hit2) return hit2;
+            }
+          } catch (e) {
+            console.warn('[coder-workspace] Fallback list+filter lookup (name only) failed:', e);
           }
-        } catch (e) {
-          console.warn('[coder-workspace] Fallback list+filter lookup (name only) failed:', e);
         }
         return null;
       }
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        console.warn(`[coder-workspace] GET workspace by name failed: ${res.status} ${text}`);
-        return null;
-      }
-      return await res.json();
+      // If we ended with a non-404 error and none succeeded, give up gracefully
+      return null;
     } catch (error) {
-      console.warn(`[coder-workspace] GET workspace by name error for ${byNameUrl}:`, error);
+      console.warn(`[coder-workspace] GET workspace by name unexpected error:`, error);
       return null;
     }
   }
@@ -377,21 +470,25 @@
     const base = (config.serverUrl || '').replace(/\/$/, '');
     // Use global list endpoint with owner filter to retrieve current user's workspaces
     const ownerQ = `owner:${config.user || 'me'}`;
-    const url = `${base}/api/v2/workspaces?q=${encodeURIComponent(ownerQ)}&limit=${encodeURIComponent(String(limit))}`;
-    try {
-      const res = await fetch(url, { method: 'GET', headers });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        console.warn(`[coder-workspace] LIST workspaces failed: ${res.status} ${text}`);
-        return [];
+    const candidates = [];
+    if (config.organization) candidates.push(`${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/workspaces?q=${encodeURIComponent(ownerQ)}&limit=${encodeURIComponent(String(limit))}`);
+    candidates.push(`${base}/api/v2/workspaces?q=${encodeURIComponent(ownerQ)}&limit=${encodeURIComponent(String(limit))}`);
+    for (const url of candidates) {
+      try {
+        const res = await fetchWithAuth(url, { method: 'GET', headers });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          console.warn(`[coder-workspace] LIST workspaces failed: ${res.status} ${text}`);
+          continue;
+        }
+        const payload = await res.json().catch(() => null);
+        const items = payload && (Array.isArray(payload.workspaces) ? payload.workspaces : Array.isArray(payload) ? payload : []);
+        if (Array.isArray(items)) return items;
+      } catch (e) {
+        console.warn('[coder-workspace] LIST workspaces error:', e);
       }
-      const payload = await res.json().catch(() => null);
-      const items = payload && (Array.isArray(payload.workspaces) ? payload.workspaces : Array.isArray(payload) ? payload : []);
-      return Array.isArray(items) ? items : [];
-    } catch (e) {
-      console.warn('[coder-workspace] LIST workspaces error:', e);
-      return [];
     }
+    return [];
   }
 
   async function findWorkspaceByPrefix(prefix) {
@@ -412,13 +509,22 @@
     const appUri = workspace && workspace.latest_app_status && workspace.latest_app_status.uri;
     const baseUrl = `/@${encodeURIComponent(workspace.owner_name || '')}/${encodeURIComponent(workspace.name)}`;
     const wsUrl = appUri || resolveCoderUrl(baseUrl + (config.appSlug ? `/apps/${encodeURIComponent(config.appSlug)}/` : ''));
-    window.open(wsUrl, '_blank', 'noopener');
+    const final = config.appendTokenToAppUrl ? withAuthUrl(wsUrl) : wsUrl;
+    console.log('[coder-workspace] Opening workspace URL:', final);
+    window.open(final, '_blank', 'noopener');
   }
 
   function computeWorkspaceUrl(workspace) {
     const appUri = workspace && workspace.latest_app_status && workspace.latest_app_status.uri;
     const baseUrl = `/@${encodeURIComponent(workspace.owner_name || '')}/${encodeURIComponent(workspace.name)}`;
     return appUri || resolveCoderUrl(baseUrl + (config.appSlug ? `/apps/${encodeURIComponent(config.appSlug)}/` : ''));
+  }
+
+  // Navigate by opening the final URL only when ready (no placeholder tab)
+  function openFinalUrl(url) {
+    const final = config.appendTokenToAppUrl ? withAuthUrl(url) : url;
+    console.log('[coder-workspace] Navigating to URL:', final);
+    try { window.open(final, '_blank', 'noopener'); return true; } catch (_) { return false; }
   }
 
   async function waitForWorkspaceApp(name, timeoutMs, intervalMs, initialWs) {
@@ -459,17 +565,18 @@
     } catch (_) {}
   }
   async function deleteWorkspaceByName(workspaceName) {
+    // The API docs expose DELETE by ID under /api/v2/workspaces/{workspace},
+    // so resolve the workspace first, then delete by ID.
     const headers = {'Accept': 'application/json'};
     if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
     const base = (config.serverUrl || '').replace(/\/$/, '');
-    const userSeg = encodeURIComponent(config.user || 'me');
-    const nameSeg = encodeURIComponent(workspaceName);
-    const url = config.organization
-      ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
-      : `${base}/api/v2/users/${userSeg}/workspaces/${nameSeg}`;
-
     try {
-      const res = await fetch(url, { method: 'DELETE', headers });
+      const ws = await getWorkspaceByName(workspaceName);
+      if (!ws || !ws.id) {
+        throw new Error('Workspace not found or missing ID');
+      }
+      const url = `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}`;
+      const res = await fetchWithAuth(url, { method: 'DELETE', headers });
       if (!res.ok) {
         const text = await res.text();
         console.error(`[coder-workspace] DELETE workspace failed: ${res.status} ${text}`);
@@ -557,9 +664,22 @@
                 currentMeta.branch === ctx.branch &&
                 currentMeta.change === ctx.change &&
                 currentMeta.patchset === ctx.patchset) {
-              notify(plugin, `Opening Coder workspace for ${ctx.repo} @ ${ctx.branch}`);
-              window.open(currentUrl, '_blank', 'noopener');
-              return;
+              // Verify the saved workspace still exists; clear stale state if not
+              try {
+                if (currentMeta.workspaceName) {
+                  const ws = await getWorkspaceByNameImpl(currentMeta.workspaceName);
+                  if (ws) {
+                    notify(plugin, `Opening Coder workspace for ${ctx.repo} @ ${ctx.branch}`);
+                    openFinalUrl(currentUrl);
+                    return;
+                  }
+                }
+                console.warn('[coder-workspace] Saved workspace not found anymore; clearing cached state');
+                clearCurrentWorkspace();
+              } catch (_verr) {
+                console.warn('[coder-workspace] Failed to verify saved workspace; clearing cached state');
+                clearCurrentWorkspace();
+              }
             }
 
             // No matching workspace: try to find existing or create new one
@@ -578,16 +698,22 @@
                   const initialUrl = computeWorkspaceUrl(ws);
                   notify(plugin, `Coder workspace ready: ${ws.name}`);
                   saveCurrentWorkspace(initialUrl, baseMeta);
-                  window.open(initialUrl, '_blank', 'noopener');
+                  // Optional readiness wait before opening
                   if (config.waitForAppReadyMs > 0 && !(ws.latest_app_status && ws.latest_app_status.uri)) {
                     notify(plugin, `Waiting for Coder workspace app to be ready…`);
                     try {
                       const ready = await waitForWorkspaceApp(ws.name, config.waitForAppReadyMs, config.waitPollIntervalMs, ws) || ws;
-                      if (ready && ready.latest_app_status && ready.latest_app_status.uri) {
-                        const updatedUrl = computeWorkspaceUrl(ready);
-                        saveCurrentWorkspace(updatedUrl, baseMeta);
-                      }
-                    } catch (_) { /* ignore */ }
+                      const urlToOpen = computeWorkspaceUrl(ready || ws);
+                      saveCurrentWorkspace(urlToOpen, baseMeta);
+                      openFinalUrl(urlToOpen);
+                    } catch (_) {
+                      openFinalUrl(initialUrl);
+                    }
+                  } else {
+                    openFinalUrl(initialUrl);
+                  }
+                  if (config.waitForAppReadyMs > 0 && !(ws.latest_app_status && ws.latest_app_status.uri)) {
+                    // readiness handled above before opening
                   }
                   return;
                 } catch (strictErr) {
@@ -599,7 +725,18 @@
                       const baseMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
                       const url = computeWorkspaceUrl(existing);
                       saveCurrentWorkspace(url, baseMeta);
-                      window.open(url, '_blank', 'noopener');
+                      // Wait for readiness (optional) then open
+                      if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
+                        notify(plugin, `Waiting for Coder workspace app to be ready…`);
+                        try {
+                          const ready = await waitForWorkspaceApp(existing.name, config.waitForAppReadyMs, config.waitPollIntervalMs, existing) || existing;
+                          const urlToOpen = computeWorkspaceUrl(ready || existing);
+                          saveCurrentWorkspace(urlToOpen, baseMeta);
+                          openFinalUrl(urlToOpen);
+                        } catch (_) { openFinalUrl(url); }
+                      } else {
+                        openFinalUrl(url);
+                      }
                       return;
                     }
                     // If not visible, surface the error without creating a suffixed workspace
@@ -622,7 +759,17 @@
                     const baseMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: existing && existing.name, workspaceOwner: existing && existing.owner_name};
                     saveCurrentWorkspace(initialUrl, baseMeta);
                     notify(plugin, `Opening existing Coder workspace: ${existing.name}`);
-                    window.open(initialUrl, '_blank', 'noopener');
+                    if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
+                      notify(plugin, `Waiting for Coder workspace app to be ready…`);
+                      try {
+                        const ready = await waitForWorkspaceApp(existing.name, config.waitForAppReadyMs, config.waitPollIntervalMs, existing) || existing;
+                        const urlToOpen = computeWorkspaceUrl(ready || existing);
+                        saveCurrentWorkspace(urlToOpen, baseMeta);
+                        openFinalUrl(urlToOpen);
+                      } catch (_) { openFinalUrl(initialUrl); }
+                    } else {
+                      openFinalUrl(initialUrl);
+                    }
 
                     // Optionally poll in the background for a better app URI and update saved URL
                     if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
@@ -651,7 +798,17 @@
                     const baseMeta = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: prefMatch && prefMatch.name, workspaceOwner: prefMatch && prefMatch.owner_name};
                     saveCurrentWorkspace(initialUrl, baseMeta);
                     notify(plugin, `Opening existing Coder workspace: ${prefMatch.name}`);
-                    window.open(initialUrl, '_blank', 'noopener');
+                    if (config.waitForAppReadyMs > 0 && !(prefMatch.latest_app_status && prefMatch.latest_app_status.uri)) {
+                      notify(plugin, `Waiting for Coder workspace app to be ready…`);
+                      try {
+                        const ready = await waitForWorkspaceApp(prefMatch.name, config.waitForAppReadyMs, config.waitPollIntervalMs, prefMatch) || prefMatch;
+                        const urlToOpen = computeWorkspaceUrl(ready || prefMatch);
+                        saveCurrentWorkspace(urlToOpen, baseMeta);
+                        openFinalUrl(urlToOpen);
+                      } catch (_) { openFinalUrl(initialUrl); }
+                    } else {
+                      openFinalUrl(initialUrl);
+                    }
                     // Background readiness wait (optional)
                     if (config.waitForAppReadyMs > 0 && !(prefMatch.latest_app_status && prefMatch.latest_app_status.uri)) {
                       notify(plugin, `Waiting for Coder workspace app to be ready…`);
@@ -688,17 +845,16 @@
               const initialUrl = computeWorkspaceUrl(ws);
               notify(plugin, `Coder workspace created: ${ws.name}`);
               saveCurrentWorkspace(initialUrl, baseMeta);
-              window.open(initialUrl, '_blank', 'noopener');
-              // Optionally poll in background for app URI and update saved URL
               if (config.waitForAppReadyMs > 0 && !(ws.latest_app_status && ws.latest_app_status.uri)) {
                 notify(plugin, `Waiting for Coder workspace app to be ready…`);
                 try {
                   const ready = await waitForWorkspaceApp(ws.name, config.waitForAppReadyMs, config.waitPollIntervalMs, ws) || ws;
-                  if (ready && ready.latest_app_status && ready.latest_app_status.uri) {
-                    const updatedUrl = computeWorkspaceUrl(ready);
-                    saveCurrentWorkspace(updatedUrl, baseMeta);
-                  }
-                } catch (_) { /* ignore */ }
+                  const urlToOpen = computeWorkspaceUrl(ready || ws);
+                  saveCurrentWorkspace(urlToOpen, baseMeta);
+                  openFinalUrl(urlToOpen);
+                } catch (_) { openFinalUrl(initialUrl); }
+              } else {
+                openFinalUrl(initialUrl);
               }
             } catch (createErr) {
               const emsg = (createErr && createErr.message) ? createErr.message : String(createErr || '');
@@ -712,7 +868,17 @@
                     const initialUrl = computeWorkspaceUrl(existing);
                     saveCurrentWorkspace(initialUrl, baseMeta);
                     notify(plugin, `Opening existing Coder workspace: ${existing.name}`);
-                    window.open(initialUrl, '_blank', 'noopener');
+                    if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
+                      notify(plugin, `Waiting for Coder workspace app to be ready…`);
+                      try {
+                        const ready = await waitForWorkspaceApp(existing.name, config.waitForAppReadyMs, config.waitPollIntervalMs, existing) || existing;
+                        const urlToOpen = computeWorkspaceUrl(ready || existing);
+                        saveCurrentWorkspace(urlToOpen, baseMeta);
+                        openFinalUrl(urlToOpen);
+                      } catch (_) { openFinalUrl(initialUrl); }
+                    } else {
+                      openFinalUrl(initialUrl);
+                    }
                     return;
                   }
                   throw createErr;
@@ -725,7 +891,7 @@
                   const initialUrl = computeWorkspaceUrl(existing);
                   saveCurrentWorkspace(initialUrl, baseMeta);
                   notify(plugin, `Opening existing Coder workspace: ${existing.name}`);
-                  window.open(initialUrl, '_blank', 'noopener');
+                  openFinalUrl(initialUrl);
 
                   if (config.waitForAppReadyMs > 0 && !(existing.latest_app_status && existing.latest_app_status.uri)) {
                     notify(plugin, `Waiting for Coder workspace app to be ready…`);
@@ -749,16 +915,16 @@
                   const baseMeta2 = {repo: ctx.repo, branch: ctx.branch, change: ctx.change, patchset: ctx.patchset, workspaceName: ws2 && ws2.name, workspaceOwner: ws2 && ws2.owner_name};
                   const initialUrl2 = computeWorkspaceUrl(ws2);
                   saveCurrentWorkspace(initialUrl2, baseMeta2);
-                  window.open(initialUrl2, '_blank', 'noopener');
                   if (config.waitForAppReadyMs > 0 && !(ws2.latest_app_status && ws2.latest_app_status.uri)) {
                     notify(plugin, `Waiting for Coder workspace app to be ready…`);
                     try {
                       const ready2 = await waitForWorkspaceApp(ws2.name, config.waitForAppReadyMs, config.waitPollIntervalMs, ws2) || ws2;
-                      if (ready2 && ready2.latest_app_status && ready2.latest_app_status.uri) {
-                        const updatedUrl2 = computeWorkspaceUrl(ready2);
-                        saveCurrentWorkspace(updatedUrl2, baseMeta2);
-                      }
-                    } catch (_) { /* ignore */ }
+                      const urlToOpen2 = computeWorkspaceUrl(ready2 || ws2);
+                      saveCurrentWorkspace(urlToOpen2, baseMeta2);
+                      openFinalUrl(urlToOpen2);
+                    } catch (_) { openFinalUrl(initialUrl2); }
+                  } else {
+                    openFinalUrl(initialUrl2);
                   }
                   return;
                 } catch (retryErr) {
@@ -942,6 +1108,8 @@
         renderNameTemplate,
         computeCandidateNames: (ctx, cfg) => computeCandidateNames(ctx, cfg || {}),
         computeWorkspaceUrl,
+        withAuthUrl: (u) => withAuthUrl(u),
+        openFinalUrl: (u) => openFinalUrl(u),
         waitForWorkspaceApp: (name, timeoutMs, intervalMs, initialWs) => waitForWorkspaceApp(name, timeoutMs, intervalMs, initialWs),
         generateUniqueName,
         buildCreateRequest: (ctx) => buildCreateRequest(ctx),

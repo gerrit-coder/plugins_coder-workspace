@@ -1,7 +1,7 @@
 // Prevent plugin auto-install during tests
 window.Gerrit = window.Gerrit || {};
 
-describe('coder-workspace: singular GET path and name-only fallback', () => {
+describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
   beforeEach(() => {
     jest.resetModules();
     // Load plugin script to populate window.__coderWorkspaceTest__
@@ -24,7 +24,7 @@ describe('coder-workspace: singular GET path and name-only fallback', () => {
     jest.clearAllMocks();
   });
 
-  test('uses singular GET /api/v2/users/{user}/workspace/{name}', async () => {
+  test('uses singular GET /api/v2/users/{user}/workspace/{name} per docs', async () => {
     const { getWorkspaceByName } = window.__coderWorkspaceTest__;
 
     const ws = { name: 'gerrit-coder-1', owner_name: 'lemon', latest_app_status: { uri: 'https://coder.example.com/@lemon/gerrit-coder-1' } };
@@ -43,6 +43,9 @@ describe('coder-workspace: singular GET path and name-only fallback', () => {
     const { getWorkspaceByName } = window.__coderWorkspaceTest__;
 
     const ws = { name: 'gerrit-coder-1', owner_name: 'lemon', latest_app_status: { uri: 'https://coder.example.com/@lemon/gerrit-coder-1' } };
+
+    // Suppress expected lookup warnings during fallbacks
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     // Call 1: singular GET-by-name -> 404
     global.fetch.mockResolvedValueOnce({ ok: false, status: 404 });
@@ -69,5 +72,29 @@ describe('coder-workspace: singular GET path and name-only fallback', () => {
       expect.stringMatching(/^https:\/\/coder\.example\.com\/api\/v2\/workspaces\?q=name%3Agerrit-coder-1&limit=10$/),
       expect.objectContaining({ method: 'GET' })
     );
+
+    warnSpy.mockRestore();
+  });
+
+  test('retries GET with token as query param on 401', async () => {
+    const { getWorkspaceByName } = window.__coderWorkspaceTest__;
+
+    const ws = { name: 'gerrit-coder-1', owner_name: 'lemon', latest_app_status: null };
+
+    // First attempt: 401 Unauthorized
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    // Retry (with query param token): succeed
+    global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(ws) });
+
+    const result = await getWorkspaceByName('gerrit-coder-1');
+    expect(result).toEqual(ws);
+
+    expect(global.fetch).toHaveBeenNthCalledWith(1,
+      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      expect.objectContaining({ method: 'GET' })
+    );
+    const secondUrl = global.fetch.mock.calls[1][0];
+    expect(secondUrl).toMatch(/^https:\/\/coder\.example\.com\/api\/v2\/users\/lemon\/workspace\/gerrit-coder-1/);
+    expect(secondUrl).toContain('coder_session_token=k');
   });
 });

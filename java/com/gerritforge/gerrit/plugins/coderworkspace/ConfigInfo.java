@@ -47,6 +47,16 @@ public class ConfigInfo {
   @SerializedName("templateMappings")
   public List<TemplateMapping> templateMappings = new ArrayList<>();
 
+  // Auth/cross-origin helpers
+  @SerializedName("retryAuthWithQueryParam")
+  public boolean retryAuthWithQueryParam = true;
+
+  @SerializedName("apiKeyQueryParamName")
+  public String apiKeyQueryParamName = "coder_session_token";
+
+  @SerializedName("appendTokenToAppUrl")
+  public boolean appendTokenToAppUrl = false;
+
   public static class RichParam {
     public String name;
     public String from;
