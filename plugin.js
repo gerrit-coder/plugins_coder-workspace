@@ -592,8 +592,7 @@
     } catch (_) {}
   }
   async function deleteWorkspaceByName(workspaceName) {
-    // The API docs expose DELETE by ID under /api/v2/workspaces/{workspace},
-    // so resolve the workspace first, then delete by ID.
+    // Resolve the workspace first, then try multiple delete routes for compatibility
     const headers = {'Accept': 'application/json'};
     if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
     const base = (config.serverUrl || '').replace(/\/$/, '');
@@ -602,13 +601,88 @@
       if (!ws || !ws.id) {
         throw new Error('Workspace not found or missing ID');
       }
-      const url = `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}`;
-      const res = await fetchWithAuth(url, { method: 'DELETE', headers });
-      if (!res.ok) {
-        const text = await res.text();
-        console.error(`[coder-workspace] DELETE workspace failed: ${res.status} ${text}`);
-        throw new Error(`Coder API error ${res.status}: ${text}`);
+
+      // Build a list of candidate deletion requests (method + url + optional body)
+      const owner = ws.owner_name || (config.user && config.user !== 'me' ? config.user : 'me');
+      const candidates = [];
+      // Primary: DELETE by id
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}` });
+      // Variants with hard/force flags used by some deployments
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}?hard=true` });
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}?force=true` });
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}?hard=true&force=true` });
+      // Fallback A: DELETE by name under user scope (singular path)
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/users/${encodeURIComponent(owner)}/workspace/${encodeURIComponent(ws.name)}` });
+      // Fallback B: DELETE by name under user scope (plural path)
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/users/${encodeURIComponent(owner)}/workspaces/${encodeURIComponent(ws.name)}` });
+      // Fallback C: org-scoped delete by name (singular path)
+      if (config.organization) {
+        candidates.push({ method: 'DELETE', url: `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${encodeURIComponent(owner)}/workspace/${encodeURIComponent(ws.name)}` });
+        // Fallback D: org-scoped delete by name (plural path)
+        candidates.push({ method: 'DELETE', url: `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${encodeURIComponent(owner)}/workspaces/${encodeURIComponent(ws.name)}` });
       }
+      // Fallback E: Global delete by name (non-scoped)
+      candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.name)}` });
+      // Fallback F: POST action endpoint pattern used by some older proxies (with optional hard flag)
+      candidates.push({ method: 'POST', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}/delete` });
+      candidates.push({ method: 'POST', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}/delete?hard=true` });
+
+      let lastErrorText = '';
+      for (const c of candidates) {
+        try {
+          const h = Object.assign({}, headers, c.headers || {});
+          const res = await fetchWithAuth(c.url, { method: c.method, headers: h, body: c.body });
+          if (res.ok) return 'hard'; // success via hard delete
+          const text = await res.text().catch(() => '');
+          lastErrorText = `${res.status} ${text}`;
+          // Log but continue to next candidate on 404/405/400
+          if (res.status === 404 || res.status === 405 || res.status === 400) {
+            console.warn(`[coder-workspace] DELETE candidate failed (${c.method} ${c.url}): ${lastErrorText}`);
+            continue;
+          }
+          // For other errors, stop early
+          console.error(`[coder-workspace] DELETE workspace failed: ${lastErrorText}`);
+          throw new Error(`Coder API error ${res.status}: ${text}`);
+        } catch (e) {
+          // Network or fetch-level error; try next candidate
+          console.warn('[coder-workspace] DELETE candidate error; trying next', e);
+          continue;
+        }
+      }
+      // If all direct delete routes failed, try softer decommission fallbacks:
+      // 1) Mark dormant, 2) Reduce TTL. Attempt both regardless of individual failures.
+      const jsonHeaders = Object.assign({}, headers, { 'Content-Type': 'application/json' });
+      let softSucceeded = false;
+      try {
+        const dormantUrl = `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}/dormant`;
+        const dormantRes = await fetchWithAuth(dormantUrl, { method: 'PUT', headers: jsonHeaders, body: JSON.stringify({ dormant: true }) });
+        if (!dormantRes.ok) {
+          const t = await dormantRes.text().catch(() => '');
+          console.warn('[coder-workspace] Dormant fallback failed:', dormantRes.status, t);
+        } else {
+          softSucceeded = true;
+        }
+      } catch (e) {
+        console.warn('[coder-workspace] Dormant fallback error:', e);
+      }
+      try {
+        const ttlUrl = `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}/ttl`;
+        // Use 60 seconds to satisfy minimums enforced by some deployments
+        const ttlRes = await fetchWithAuth(ttlUrl, { method: 'PUT', headers: jsonHeaders, body: JSON.stringify({ ttl_ms: 60000 }) });
+        if (!ttlRes.ok) {
+          const t = await ttlRes.text().catch(() => '');
+          console.warn('[coder-workspace] TTL fallback failed:', ttlRes.status, t);
+        } else {
+          softSucceeded = true;
+        }
+      } catch (e) {
+        console.warn('[coder-workspace] TTL fallback error:', e);
+      }
+      if (softSucceeded) {
+        console.warn('[coder-workspace] Soft decommission applied (dormant/ttl). Workspace will auto-expire shortly.');
+        return 'soft';
+      }
+      throw new Error(`Unable to delete workspace via available routes: ${lastErrorText || 'no route'}`);
     } catch (error) {
       console.error(`[coder-workspace] DELETE workspace error:`, error);
       throw error;
@@ -1008,11 +1082,24 @@
             }
 
             // Confirm deletion
-            const ok = window.confirm(`Delete Coder workspace "${name}" for ${ctx.repo} @ ${ctx.branch}?`);
+            const ok = window.confirm(`Delete Coder workspace "${name}"?`);
             if (!ok) return;
 
-            await deleteWorkspaceByName(name);
-            notify(plugin, 'Coder workspace deleted');
+            const kind = await deleteWorkspaceByName(name);
+            if (kind === 'soft') {
+              notify(plugin, 'Coder workspace scheduled to stop and expire in ~1 minute. It may remain visible briefly.');
+              // Optional: background check after 75s to inform user
+              setTimeout(async () => {
+                try {
+                  const w = await getWorkspaceByNameImpl(name);
+                  if (!w) {
+                    notify(plugin, 'Coder workspace has been removed.');
+                  }
+                } catch (_) { /* ignore */ }
+              }, 75000);
+            } else {
+              notify(plugin, 'Coder workspace deleted');
+            }
             clearCurrentWorkspace();
           } catch (e) {
             const msg = e && e.message ? e.message : String(e);
@@ -1151,6 +1238,7 @@
         createWorkspaceStrict: (body) => createWorkspaceStrict(body),
         // Expose direct lookup for unit tests
         getWorkspaceByName: (n) => getWorkspaceByName(n),
+        deleteWorkspaceByName: (n) => deleteWorkspaceByName(n),
         setGetWorkspaceByName: (fn) => { getWorkspaceByNameImpl = fn || getWorkspaceByName; },
         setConfig: (patch) => { try { Object.assign(config, patch || {}); } catch(_){} },
       };

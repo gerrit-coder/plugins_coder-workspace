@@ -308,39 +308,32 @@ Deletes your Coder workspace for the current context. You will be asked to confi
 
 #### "Coder Workspace plugin is not configured (serverUrl is empty)"
 
-   ```bash
-   ls -la $GERRIT_SITE/plugins/coder-workspace.jar
-   ```
+```bash
+ls -la $GERRIT_SITE/plugins/coder-workspace.jar
+```
 
-   Visit `http://your-gerrit-server/config/server/coder-workspace.config`
+Visit `http://your-gerrit-server/config/server/coder-workspace.config`
 
-   **Expected result:** JSON response with your configuration
-   **If error/empty:** Plugin isn't loaded properly
+**Expected result:** JSON response with your configuration, for example:
 
-3. **Check browser console:**
-   - Open developer tools (F12)
-   - Look for `[coder-workspace]` debug messages
-   - Check for JavaScript errors
-
-4. **Restart Gerrit:**
-   ```bash
-   $GERRIT_SITE/bin/gerrit.sh restart
-   ```
-
-
-1. **Verify plugin is enabled:**
-   ```ini
-   [plugin "coder-workspace"]
-     enabled = true
-   ```
-
-2. **Check plugin list:**
-   Look for `coder-workspace` in the list
-
-3. **Check Gerrit logs:**
-   ```bash
-   tail -f $GERRIT_SITE/logs/error_log
-   ```
+```json
+{
+  "enabled": true,
+  "serverUrl": "http://localhost:3000",
+  "organization": "7c60d51f-b44e-4682-87d6-449835ea4de6",
+  "user": "me",
+  "templateId": "c6d67e98-83ea-49f0-8812-e4abae2b68bc",
+  "workspaceNameTemplate": "{repo}-{change}",
+  "strictName": true,
+  "richParams": {
+    "REPO": "repo",
+    "BRANCH": "branch",
+    "GERRIT_CHANGE": "change",
+    "GERRIT_PATCHSET": "patchset",
+    "GERRIT_CHANGE_URL": "url"
+  }
+}
+```
 
 #### "Failed to open/create Coder workspace" errors
 

@@ -263,7 +263,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
         document.createElement('gr-alert');
         return;
       }
-      const confirmed = window.confirm(`Delete Coder workspace "${workspaceName}" for ${repo} @ ${branch}?`);
+      const confirmed = window.confirm(`Delete Coder workspace "${workspaceName}"?`);
       if (!confirmed) return;
 
       const cfg = await api.get('/config/server/coder-workspace.config');
@@ -502,7 +502,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
 
       // Verify confirmation dialog
       expect(global.window.confirm).toHaveBeenCalledWith(
-        'Delete Coder workspace "test-project-12345-3" for test/project @ refs/heads/main?'
+        'Delete Coder workspace "test-project-12345-3"?'
       );
 
       // Verify localStorage was cleared
