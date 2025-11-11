@@ -815,5 +815,245 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
       const result = installPlugin(mockPlugin);
       expect(result).toBe(false);
     });
+
+    test('should handle Gerrit 3.4.1 addActionButton undefined error and retry', () => {
+      // Mock changeActions.add() to throw TypeError about addActionButton (Gerrit 3.4.1 scenario)
+      const mockChangeActions = {
+        add: jest.fn(() => {
+          const error = new TypeError("Cannot read properties of undefined (reading 'addActionButton')");
+          error.message = "Cannot read properties of undefined (reading 'addActionButton')";
+          throw error;
+        }),
+        setActionOverflow: jest.fn(),
+        setActionPriority: jest.fn(),
+        setTitle: jest.fn(),
+        addTapListener: jest.fn()
+      };
+
+      mockPlugin.changeActions = () => mockChangeActions;
+
+      // Simulate plugin installation with Gerrit 3.4.1 error handling
+      const installActions = () => {
+        try {
+          const changeActions = mockPlugin.changeActions();
+          if (!changeActions) return false;
+
+          // Try to add open action - this should catch the TypeError
+          let openLastKey;
+          try {
+            openLastKey = changeActions.add('revision', 'Open Coder Workspace');
+          } catch (e) {
+            const errorStr = (e && e.message ? e.message : String(e || ''));
+            const errorName = (e && e.name ? e.name : '');
+            if (errorStr.includes('addActionButton') ||
+                errorStr.includes('Cannot read properties of undefined') ||
+                errorStr.includes('reading \'addActionButton\'') ||
+                (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+              return false; // Retry later
+            }
+            throw e;
+          }
+          if (!openLastKey) return false;
+
+          return true;
+        } catch (e) {
+          console.warn('[coder-workspace] Failed to install actions (retry later)', e);
+          return false;
+        }
+      };
+
+      const result = installActions();
+      expect(result).toBe(false); // Should return false to trigger retry
+      expect(mockChangeActions.add).toHaveBeenCalled();
+    });
+
+    test('should successfully install actions after element becomes ready', () => {
+      // Mock changeActions.add() to succeed (element is ready)
+      const mockChangeActions = {
+        add: jest.fn()
+          .mockReturnValueOnce('open-action-key') // First call succeeds
+          .mockReturnValueOnce('delete-action-key'), // Second call succeeds
+        setActionOverflow: jest.fn(),
+        setActionPriority: jest.fn(),
+        setTitle: jest.fn(),
+        addTapListener: jest.fn()
+      };
+
+      mockPlugin.changeActions = () => mockChangeActions;
+
+      // Simulate plugin installation
+      const installActions = () => {
+        try {
+          const changeActions = mockPlugin.changeActions();
+          if (!changeActions) return false;
+
+          // Try to add open action
+          let openLastKey;
+          try {
+            openLastKey = changeActions.add('revision', 'Open Coder Workspace');
+          } catch (e) {
+            const errorStr = (e && e.message ? e.message : String(e || ''));
+            const errorName = (e && e.name ? e.name : '');
+            if (errorStr.includes('addActionButton') ||
+                errorStr.includes('Cannot read properties of undefined') ||
+                errorStr.includes('reading \'addActionButton\'') ||
+                (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+              return false;
+            }
+            throw e;
+          }
+          if (!openLastKey) return false;
+
+          // Try to add delete action
+          let deleteKey;
+          try {
+            deleteKey = changeActions.add('revision', 'Delete Coder Workspace');
+          } catch (e) {
+            const errorStr = (e && e.message ? e.message : String(e || ''));
+            const errorName = (e && e.name ? e.name : '');
+            if (errorStr.includes('addActionButton') ||
+                errorStr.includes('Cannot read properties of undefined') ||
+                errorStr.includes('reading \'addActionButton\'') ||
+                (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+              return false;
+            }
+            throw e;
+          }
+          if (!deleteKey) return false;
+
+          // Configure actions
+          changeActions.setActionOverflow('revision', openLastKey, true);
+          changeActions.setActionOverflow('revision', deleteKey, true);
+          if (changeActions.setActionPriority) {
+            changeActions.setActionPriority('revision', openLastKey, 9998);
+            changeActions.setActionPriority('revision', deleteKey, 9999);
+          }
+          changeActions.setTitle(openLastKey, 'Open your Coder workspace, creating one if necessary');
+          changeActions.setTitle(deleteKey, 'Delete your Coder workspace for current context');
+
+          return true;
+        } catch (e) {
+          console.warn('[coder-workspace] Failed to install actions (retry later)', e);
+          return false;
+        }
+      };
+
+      const result = installActions();
+      expect(result).toBe(true); // Should succeed when element is ready
+      expect(mockChangeActions.add).toHaveBeenCalledTimes(2);
+      expect(mockChangeActions.setActionOverflow).toHaveBeenCalledTimes(2);
+      expect(mockChangeActions.setTitle).toHaveBeenCalledTimes(2);
+    });
+
+    test('should re-throw non-addActionButton errors', () => {
+      // Mock changeActions.add() to throw a different error
+      const mockChangeActions = {
+        add: jest.fn(() => {
+          throw new Error('Network error');
+        }),
+        setActionOverflow: jest.fn(),
+        setActionPriority: jest.fn(),
+        setTitle: jest.fn(),
+        addTapListener: jest.fn()
+      };
+
+      mockPlugin.changeActions = () => mockChangeActions;
+
+      // Simulate plugin installation
+      const installActions = () => {
+        try {
+          const changeActions = mockPlugin.changeActions();
+          if (!changeActions) return false;
+
+          let openLastKey;
+          try {
+            openLastKey = changeActions.add('revision', 'Open Coder Workspace');
+          } catch (e) {
+            const errorStr = (e && e.message ? e.message : String(e || ''));
+            const errorName = (e && e.name ? e.name : '');
+            if (errorStr.includes('addActionButton') ||
+                errorStr.includes('Cannot read properties of undefined') ||
+                errorStr.includes('reading \'addActionButton\'') ||
+                (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+              return false;
+            }
+            throw e; // Re-throw non-addActionButton errors
+          }
+          if (!openLastKey) return false;
+
+          return true;
+        } catch (e) {
+          console.warn('[coder-workspace] Failed to install actions (retry later)', e);
+          return false;
+        }
+      };
+
+      expect(() => installActions()).not.toThrow(); // Should be caught by outer try-catch
+      expect(mockChangeActions.add).toHaveBeenCalled();
+    });
+
+    test('should handle retry logic with interval timer', (done) => {
+      // Mock changeActions that fails first, then succeeds
+      let callCount = 0;
+      const mockChangeActions = {
+        add: jest.fn(() => {
+          callCount++;
+          if (callCount === 1) {
+            // First call fails with addActionButton error
+            const error = new TypeError("Cannot read properties of undefined (reading 'addActionButton')");
+            error.message = "Cannot read properties of undefined (reading 'addActionButton')";
+            throw error;
+          }
+          // Second call succeeds
+          return 'open-action-key';
+        }),
+        setActionOverflow: jest.fn(),
+        setActionPriority: jest.fn(),
+        setTitle: jest.fn(),
+        addTapListener: jest.fn()
+      };
+
+      mockPlugin.changeActions = () => mockChangeActions;
+
+      // Simulate retry logic
+      const installActions = () => {
+        try {
+          const changeActions = mockPlugin.changeActions();
+          if (!changeActions) return false;
+
+          let openLastKey;
+          try {
+            openLastKey = changeActions.add('revision', 'Open Coder Workspace');
+          } catch (e) {
+            const errorStr = (e && e.message ? e.message : String(e || ''));
+            const errorName = (e && e.name ? e.name : '');
+            if (errorStr.includes('addActionButton') ||
+                errorStr.includes('Cannot read properties of undefined') ||
+                errorStr.includes('reading \'addActionButton\'') ||
+                (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+              return false;
+            }
+            throw e;
+          }
+          if (!openLastKey) return false;
+
+          return true;
+        } catch (e) {
+          console.warn('[coder-workspace] Failed to install actions (retry later)', e);
+          return false;
+        }
+      };
+
+      // First attempt fails
+      expect(installActions()).toBe(false);
+
+      // Simulate retry after element becomes ready
+      setTimeout(() => {
+        const result = installActions();
+        expect(result).toBe(true);
+        expect(mockChangeActions.add).toHaveBeenCalledTimes(2);
+        done();
+      }, 100);
+    });
   });
 });

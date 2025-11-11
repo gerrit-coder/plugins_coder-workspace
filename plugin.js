@@ -739,7 +739,25 @@
         // Per request, remove explicit "Create Coder Workspace" action from the dropdown.
 
         // Open last actions (initialized once)
-        var openLastKey = changeActions.add('revision', OPEN_LAST_ACTION_LABEL);
+        // Wrap in try-catch to handle case where element isn't ready yet (Gerrit 3.4+)
+        let openLastKey;
+        try {
+          openLastKey = changeActions.add('revision', OPEN_LAST_ACTION_LABEL);
+        } catch (e) {
+          // Element not ready yet, retry later
+          // Check for TypeError about undefined addActionButton (Gerrit 3.4+ compatibility)
+          const errorStr = (e && e.message ? e.message : String(e || ''));
+          const errorName = (e && e.name ? e.name : '');
+          if (errorStr.includes('addActionButton') ||
+              errorStr.includes('Cannot read properties of undefined') ||
+              errorStr.includes('reading \'addActionButton\'') ||
+              (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+            return false;
+          }
+          throw e;
+        }
+        if (!openLastKey) return false;
+
         changeActions.setActionOverflow('revision', openLastKey, true);
         // Then Open (9998)
         if (changeActions.setActionPriority) changeActions.setActionPriority('revision', openLastKey, 9998);
@@ -1050,7 +1068,25 @@
         });
 
         // Delete Coder Workspace action
-        const deleteKey = changeActions.add('revision', DELETE_ACTION_LABEL);
+        // Wrap in try-catch to handle case where element isn't ready yet (Gerrit 3.4+)
+        let deleteKey;
+        try {
+          deleteKey = changeActions.add('revision', DELETE_ACTION_LABEL);
+        } catch (e) {
+          // Element not ready yet, retry later
+          // Check for TypeError about undefined addActionButton (Gerrit 3.4+ compatibility)
+          const errorStr = (e && e.message ? e.message : String(e || ''));
+          const errorName = (e && e.name ? e.name : '');
+          if (errorStr.includes('addActionButton') ||
+              errorStr.includes('Cannot read properties of undefined') ||
+              errorStr.includes('reading \'addActionButton\'') ||
+              (errorName === 'TypeError' && errorStr.includes('undefined'))) {
+            return false;
+          }
+          throw e;
+        }
+        if (!deleteKey) return false;
+
         changeActions.setActionOverflow('revision', deleteKey, true);
         // Finally Delete (9999)
         if (changeActions.setActionPriority) changeActions.setActionPriority('revision', deleteKey, 9999);

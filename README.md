@@ -6,6 +6,13 @@ exists for the repo/branch/patchset, the plugin creates one using the Coder REST
 and injects Gerrit context (repo, branch, change, patchset) into the template via
 rich parameters.
 
+## Compatibility
+
+This plugin is compatible with Gerrit 3.4.1 and later versions. The plugin includes
+automatic retry logic to handle Gerrit 3.4.1's change actions API initialization timing.
+If you encounter errors about `addActionButton` being undefined, see the
+[Troubleshooting](#troubleshooting) section below for details.
+
 ## Features
 
 - Open or create-on-demand a Coder workspace for the current change/patchset, passing repo, branch, change and patchset via rich parameters
