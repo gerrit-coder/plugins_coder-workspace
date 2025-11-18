@@ -89,6 +89,9 @@ public class ConfigInfo {
     list.add(new RichParam("GERRIT_CHANGE", "change"));
     list.add(new RichParam("GERRIT_PATCHSET", "patchset"));
     list.add(new RichParam("GERRIT_CHANGE_URL", "url"));
+    list.add(new RichParam("GERRIT_GIT_HTTP_URL", "gitHttpUrl"));
+    list.add(new RichParam("GERRIT_GIT_SSH_URL", "gitSshUrl"));
+    list.add(new RichParam("GERRIT_CHANGE_REF", "changeRef"));
     return list;
   }
 }

@@ -27,6 +27,9 @@
       {name: 'GERRIT_CHANGE', from: 'change'},
       {name: 'GERRIT_PATCHSET', from: 'patchset'},
       {name: 'GERRIT_CHANGE_URL', from: 'url'},
+      {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
+      {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
+      {name: 'GERRIT_CHANGE_REF', from: 'changeRef'},
     ],
     ttlMs: 0,
     openAfterCreate: true,
@@ -188,7 +191,42 @@
     const origin = window.location.origin;
     const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}` + (patchset ? `/${patchset}` : '');
     const branchShort = branch ? String(branch).split('/').pop() : '';
-    return {repo: project, branch, branchShort, change: changeNum, patchset, url};
+
+    // Construct git repository URLs (HTTP and SSH)
+    // HTTP URL: use the origin with /a/ prefix for authenticated access
+    const httpUrl = `${origin}/a/${project}`;
+    // SSH URL: extract hostname and construct SSH URL (default port 29418)
+    let sshUrl = '';
+    try {
+      const urlObj = new URL(origin);
+      const hostname = urlObj.hostname;
+      const port = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80');
+      // Default SSH port for Gerrit is 29418
+      sshUrl = `ssh://${hostname}:29418/${project}`;
+    } catch (_) {
+      // Fallback if URL parsing fails
+      sshUrl = `ssh://${origin.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}:29418/${project}`;
+    }
+
+    // Construct change ref: refs/changes/X/Y/Z where X=last 2 digits, Y=full change number, Z=patchset
+    let changeRef = '';
+    if (changeNum && patchset) {
+      const changeNumStr = String(changeNum);
+      const lastTwoDigits = changeNumStr.length >= 2 ? changeNumStr.slice(-2) : changeNumStr.padStart(2, '0');
+      changeRef = `refs/changes/${lastTwoDigits}/${changeNumStr}/${patchset}`;
+    }
+
+    return {
+      repo: project,
+      branch,
+      branchShort,
+      change: changeNum,
+      patchset,
+      url,
+      gitHttpUrl: httpUrl,
+      gitSshUrl: sshUrl,
+      changeRef: changeRef
+    };
   }
 
   async function getChangeContextWithRetry(maxWaitMs = 1000, intervalMs = 100) {
@@ -1221,7 +1259,7 @@
   function validateMappingsSchema(value) {
     if (!Array.isArray(value)) return {valid: false, error: 'Mappings must be an array'};
     const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','richParams']);
-    const allowedFrom = new Set(['repo','branch','change','patchset','url']);
+    const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef']);
     for (let i = 0; i < value.length; i++) {
       const m = value[i];
       if (typeof m !== 'object' || m == null) return {valid:false, error:`Entry #${i+1} must be an object`};

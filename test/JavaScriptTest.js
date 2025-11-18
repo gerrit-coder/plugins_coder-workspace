@@ -23,7 +23,10 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
         {name: 'BRANCH', from: 'branch'},
         {name: 'GERRIT_CHANGE', from: 'change'},
         {name: 'GERRIT_PATCHSET', from: 'patchset'},
-        {name: 'GERRIT_CHANGE_URL', from: 'url'}
+        {name: 'GERRIT_CHANGE_URL', from: 'url'},
+        {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
+        {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
+        {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
       ],
       templateMappings: [],
       ttlMs: 0,
@@ -120,6 +123,15 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
 
   describe('Change Context Extraction', () => {
     test('should extract change context from DOM elements', () => {
+      Object.defineProperty(window, 'location', {
+        value: {
+          origin: 'https://gerrit.example.com',
+          pathname: '/c/test%2Fproject/+/12345/2',
+          href: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'
+        },
+        writable: true
+      });
+
       const mockChange = {
         project: 'test/project',
         branch: 'refs/heads/main',
@@ -149,6 +161,9 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       expect(context.branch).toBe('refs/heads/main');
       expect(context.change).toBe('12345');
       expect(context.patchset).toBe('2');
+      expect(context.gitHttpUrl).toBe('https://gerrit.example.com/a/test/project');
+      expect(context.gitSshUrl).toBe('ssh://gerrit.example.com:29418/test/project');
+      expect(context.changeRef).toBe('refs/changes/45/12345/2');
     });
 
     test('should fallback to URL parsing when DOM elements are not available', () => {
@@ -156,8 +171,10 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       Object.defineProperty(window, 'location', {
         value: {
           pathname: '/c/test%2Fproject/+/12345/3',
-          origin: 'https://gerrit.example.com'
-        }
+          origin: 'https://gerrit.example.com',
+          href: 'https://gerrit.example.com/c/test%2Fproject/+/12345/3'
+        },
+        writable: true
       });
 
       const context = getChangeContextFromPage();
@@ -166,6 +183,9 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       expect(context.change).toBe('12345');
       expect(context.patchset).toBe('3');
       expect(context.url).toBe('https://gerrit.example.com/c/test%2Fproject/+/12345/3');
+      expect(context.gitHttpUrl).toBe('https://gerrit.example.com/a/test/project');
+      expect(context.gitSshUrl).toBe('ssh://gerrit.example.com:29418/test/project');
+      expect(context.changeRef).toBe('refs/changes/45/12345/3');
     });
 
     test('should default to latest patchset when not specified', () => {
@@ -389,7 +409,10 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
         {name: 'BRANCH', from: 'branch'},
         {name: 'GERRIT_CHANGE', from: 'change'},
         {name: 'GERRIT_PATCHSET', from: 'patchset'},
-        {name: 'GERRIT_CHANGE_URL', from: 'url'}
+        {name: 'GERRIT_CHANGE_URL', from: 'url'},
+        {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
+        {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
+        {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
       ];
 
       const context = {
@@ -397,7 +420,10 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
         branch: 'refs/heads/main',
         change: '12345',
         patchset: '2',
-        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'
+        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
+        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
+        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
+        changeRef: 'refs/changes/45/12345/2'
       };
 
       const result = toRichParameterValues(context, richParams);
@@ -407,7 +433,10 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
         {name: 'BRANCH', value: 'refs/heads/main'},
         {name: 'GERRIT_CHANGE', value: '12345'},
         {name: 'GERRIT_PATCHSET', value: '2'},
-        {name: 'GERRIT_CHANGE_URL', value: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'}
+        {name: 'GERRIT_CHANGE_URL', value: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'},
+        {name: 'GERRIT_GIT_HTTP_URL', value: 'https://gerrit.example.com/a/test/project'},
+        {name: 'GERRIT_GIT_SSH_URL', value: 'ssh://gerrit.example.com:29418/test/project'},
+        {name: 'GERRIT_CHANGE_REF', value: 'refs/changes/45/12345/2'}
       ]);
     });
 
@@ -772,7 +801,36 @@ function getChangeContextFromPage() {
 
   const origin = (window.location && window.location.origin) || '';
   const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}/${patchset}`;
-  return {repo: project, branch, change: changeNum, patchset, url};
+
+  // Construct git repository URLs
+  const httpUrl = `${origin}/a/${project}`;
+  let sshUrl = '';
+  try {
+    const urlObj = new URL(origin);
+    const hostname = urlObj.hostname;
+    sshUrl = `ssh://${hostname}:29418/${project}`;
+  } catch (_) {
+    sshUrl = `ssh://${origin.replace(/^https?:\/\//, '').replace(/:\d+$/, '')}:29418/${project}`;
+  }
+
+  // Construct change ref
+  let changeRef = '';
+  if (changeNum && patchset) {
+    const changeNumStr = String(changeNum);
+    const lastTwoDigits = changeNumStr.length >= 2 ? changeNumStr.slice(-2) : changeNumStr.padStart(2, '0');
+    changeRef = `refs/changes/${lastTwoDigits}/${changeNumStr}/${patchset}`;
+  }
+
+  return {
+    repo: project,
+    branch,
+    change: changeNum,
+    patchset,
+    url,
+    gitHttpUrl: httpUrl,
+    gitSshUrl: sshUrl,
+    changeRef: changeRef
+  };
 }
 
 function matchGlob(pattern, value) {
@@ -936,7 +994,7 @@ async function previewAndConfirm(plugin, requestBody) {
 function validateMappingsSchema(value) {
   if (!Array.isArray(value)) return {valid: false, error: 'Mappings must be an array'};
   const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','richParams']);
-  const allowedFrom = new Set(['repo','branch','change','patchset','url']);
+  const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef']);
   for (let i = 0; i < value.length; i++) {
     const m = value[i];
     if (typeof m !== 'object' || m == null) return {valid:false, error:`Entry #${i+1} must be an object`};
@@ -949,7 +1007,7 @@ function validateMappingsSchema(value) {
         const rp = m.richParams[j];
         if (typeof rp !== 'object' || rp == null) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] must be an object`};
         if (!rp.name) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] missing 'name'`};
-        if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url)`};
+        if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url,gitHttpUrl,gitSshUrl,changeRef)`};
       }
     }
   }

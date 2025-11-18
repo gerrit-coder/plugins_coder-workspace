@@ -26,6 +26,7 @@ If you encounter errors about `addActionButton` being undefined, see the
 - Single workspace management (no history tracking)
 - Exact-name creation mode via `strictName` (enforce precise names from `workspaceNameTemplate`, no suffixing)
 - Cross-browser authentication helpers to avoid login redirects when Coder and Gerrit are in different browsers
+- Automatically passes git repository URLs and change refs as rich parameters, enabling workspace templates to clone the repository and cherry-pick the latest patchset
 
 ## Configure
 
@@ -292,6 +293,7 @@ If a mapping provides `richParams`, it overrides the default parameter mapping f
 
 - On the change page, the "Open Coder Workspace" action targets the latest patchset if none is selected.
 - The plugin passes repo, branch, change, patchset and change URL as rich parameters by default (configurable).
+- The plugin also passes git repository URLs and change refs for automatic repository cloning and cherry-picking (see [Git Repository Cloning](#git-repository-cloning) below).
 
 ### Single Workspace Management
 
@@ -503,6 +505,135 @@ For additional support, include:
 - Coder version
 - Error messages from logs
 - Browser console output
+
+## Git Repository Cloning
+
+The plugin automatically provides git repository URLs and change refs as rich parameters, enabling your Coder workspace template to automatically clone the Gerrit repository and cherry-pick the latest patchset when the workspace is created.
+
+### Rich Parameters for Git Operations
+
+The following rich parameters are automatically included (in addition to the standard ones):
+
+- `GERRIT_GIT_HTTP_URL`: HTTP URL for the git repository (e.g., `https://gerrit.example.com/a/my/project`)
+- `GERRIT_GIT_SSH_URL`: SSH URL for the git repository (e.g., `ssh://gerrit.example.com:29418/my/project`)
+- `GERRIT_CHANGE_REF`: Git ref for the patchset (e.g., `refs/changes/74/67374/2`)
+- `GERRIT_CHANGE`: Numeric change identifier
+- `GERRIT_PATCHSET`: Patchset number
+- `REPO`: Suggested directory name for the checkout
+
+### Using the Startup Script
+
+A sample startup script is provided at `plugins/coder-workspace/scripts/clone-and-cherrypick.sh`. You can use this script in your Coder template's startup script to automatically clone the repository and cherry-pick the patchset.
+
+### Accessing Rich Parameters in Terraform Templates
+
+When building Terraform-based Coder templates, rich parameters are exposed via `data "coder_parameter"` data sources (not standard Terraform variables). Define one data source per parameter and pass the resulting values into your agent/container environment:
+
+```hcl
+data "coder_parameter" "gerrit_git_http_url" {
+  name    = "GERRIT_GIT_HTTP_URL"
+  type    = "string"
+  default = ""
+}
+
+# Repeat for GERRIT_GIT_SSH_URL, GERRIT_CHANGE_REF, GERRIT_CHANGE, GERRIT_PATCHSET, REPO...
+
+resource "coder_agent" "main" {
+  # ...
+  env = {
+    GERRIT_GIT_HTTP_URL = data.coder_parameter.gerrit_git_http_url.value
+    GERRIT_GIT_SSH_URL  = data.coder_parameter.gerrit_git_ssh_url.value
+    GERRIT_CHANGE_REF   = data.coder_parameter.gerrit_change_ref.value
+    GERRIT_CHANGE       = data.coder_parameter.gerrit_change.value
+    GERRIT_PATCHSET     = data.coder_parameter.gerrit_patchset.value
+    REPO                = data.coder_parameter.repo.value
+  }
+}
+```
+
+Coder populates these data sources automatically when the workspace is created from a Gerrit change through the plugin.
+
+**Example Coder Template Startup Script:**
+
+```bash
+#!/bin/bash
+# In your Coder template, add this to the startup script
+
+# The script uses environment variables passed as rich parameters
+# Make sure your template exposes these as environment variables:
+# - GERRIT_GIT_HTTP_URL or GERRIT_GIT_SSH_URL
+# - GERRIT_CHANGE_REF
+# - REPO (optional, used as directory name)
+
+# Download and execute the clone script
+curl -fsSL https://raw.githubusercontent.com/your-org/gerrit/plugins/coder-workspace/scripts/clone-and-cherrypick.sh | bash
+
+# Or copy the script into your template and execute it:
+# /path/to/clone-and-cherrypick.sh
+```
+
+**Alternative: Direct Git Commands in Template**
+
+You can also use the rich parameters directly in your Coder template:
+
+```bash
+#!/bin/bash
+# Disable coder askpass helper and prefer SSH cloning
+git config --global credential.helper ""
+unset GIT_ASKPASS || true
+export GIT_ASKPASS=""
+
+# Prefer SSH URL when available
+GIT_URL="${GERRIT_GIT_SSH_URL:-${GERRIT_GIT_HTTP_URL}}"
+if [ -z "$GIT_URL" ]; then
+  echo "Missing Gerrit git URL"
+  exit 1
+fi
+
+# Construct change ref when only change + patchset are provided
+if [ -z "$GERRIT_CHANGE_REF" ] && [ -n "$GERRIT_CHANGE" ] && [ -n "$GERRIT_PATCHSET" ]; then
+  if [ ${#GERRIT_CHANGE} -ge 2 ]; then
+    LAST_TWO="${GERRIT_CHANGE: -2}"
+  else
+    LAST_TWO=$(printf "%02d" "$GERRIT_CHANGE")
+  fi
+  GERRIT_CHANGE_REF="refs/changes/${LAST_TWO}/${GERRIT_CHANGE}/${GERRIT_PATCHSET}"
+fi
+
+if [ -z "$GERRIT_CHANGE_REF" ]; then
+  echo "Missing GERRIT_CHANGE_REF"
+  exit 1
+fi
+
+# Clone the repository
+git clone "$GIT_URL" "${REPO:-gerrit-repo}"
+
+# Navigate to the repository
+cd "${REPO:-gerrit-repo}"
+
+# Fetch and cherry-pick the patchset
+git fetch origin "${GERRIT_CHANGE_REF}"
+git cherry-pick FETCH_HEAD
+```
+
+### Customizing Rich Parameters
+
+If you want to customize which git-related parameters are passed, you can override the `richParams` configuration:
+
+```ini
+[plugin "coder-workspace"]
+  # Only include git HTTP URL and change ref
+  richParams = REPO:repo,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_GIT_HTTP_URL:gitHttpUrl,GERRIT_CHANGE_REF:changeRef
+```
+
+### Troubleshooting Git Operations
+
+- **Authentication**: Disable Coder's default askpass helper (`git config --global credential.helper ""` and `unset GIT_ASKPASS`) or prefer SSH URLs to avoid HTTP prompts. If HTTP is required, configure credentials (e.g., `.netrc`).
+- **SSH Keys**: If using SSH URLs, ensure SSH keys are configured in the workspace
+- **Cherry-pick Conflicts**: If cherry-pick fails due to conflicts, the repository will be left in a cherry-pick state. Resolve conflicts manually and run `git cherry-pick --continue`
+- **Missing Parameters**:
+  - Verify that `GERRIT_CHANGE_REF` is set correctly. The ref format is `refs/changes/X/Y/Z` where X is the last 2 digits of the change number, Y is the full change number, and Z is the patchset number.
+  - If only `GERRIT_CHANGE` and `GERRIT_PATCHSET` are provided, construct the ref in your script (see examples above).
 
 ## Tests
 
