@@ -2,12 +2,15 @@
 window.Gerrit = window.Gerrit || {};
 
 describe('coder-workspace: Git Repository Cloning', () => {
+  let testHooks;
+
   beforeAll(() => {
     // Load the plugin script, which will attach test helpers to window
     require('../plugin.js');
     if (!window.__coderWorkspaceTest__) {
       throw new Error('__coderWorkspaceTest__ not found on window');
     }
+    testHooks = window.__coderWorkspaceTest__;
   });
 
   describe('Change Context with Git URLs', () => {
@@ -207,6 +210,91 @@ describe('coder-workspace: Git Repository Cloning', () => {
       const httpsOrigin = 'https://gerrit.example.com';
       const httpsUrl = `${httpsOrigin}/a/test/project`;
       expect(httpsUrl).toBe('https://gerrit.example.com/a/test/project');
+    });
+  });
+
+  describe('Change context patchset fallbacks', () => {
+    const getCtx = () => testHooks.getChangeContextFromPage();
+    let originalQuerySelector;
+    let originalLocation;
+
+    beforeEach(() => {
+      originalQuerySelector = document.querySelector;
+      originalLocation = window.location;
+      delete window.location;
+      window.location = {
+        origin: 'https://gerrit.example.com',
+        pathname: '/c/test%2Fproject/+/12345',
+        href: 'https://gerrit.example.com/c/test%2Fproject/+/12345'
+      };
+    });
+
+    afterEach(() => {
+      document.querySelector = originalQuerySelector;
+      window.location = originalLocation;
+    });
+
+    test('uses patchRange.patchNum when change data not hydrated', () => {
+      const mockChangeView = {
+        change: null,
+        _change: null,
+        viewState: {
+          change: {
+            project: 'test/project',
+            branch: 'refs/heads/main',
+            _number: 12345
+          }
+        },
+        patchRange: { patchNum: 7 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = getCtx();
+      expect(ctx.patchset).toBe('7');
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('falls back to latestPatchNum when patchRange missing', () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/dev',
+          _number: 12345,
+          revisions: {}
+        },
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: 5
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = getCtx();
+      expect(ctx.patchset).toBe('5');
+      expect(ctx.branch).toBe('refs/heads/dev');
     });
   });
 

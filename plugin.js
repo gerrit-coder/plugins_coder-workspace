@@ -148,7 +148,9 @@
     let patchset = '';
 
     const changeEl = grApp && grApp.shadowRoot && grApp.shadowRoot.querySelector('gr-change-view');
-    const change = changeEl && changeEl.change;
+    const change =
+      (changeEl && (changeEl.change || changeEl._change)) ||
+      (changeEl && changeEl.viewState && changeEl.viewState.change);
     const currentRevision = changeEl && changeEl.currentRevision;
     if (change) {
       project = change.project || '';
@@ -166,6 +168,20 @@
             .filter(n => typeof n === 'number');
           if (nums.length) patchset = String(Math.max.apply(null, nums));
         } catch (_) {}
+      }
+    }
+
+    // Additional fallbacks if Polymer hasn't populated `change` yet
+    if (changeEl) {
+      if (!branch && changeEl.viewState && changeEl.viewState.change) {
+        branch = changeEl.viewState.change.branch || branch;
+      }
+      if (!patchset) {
+        if (changeEl.patchRange && changeEl.patchRange.patchNum) {
+          patchset = String(changeEl.patchRange.patchNum);
+        } else if (changeEl.latestPatchNum || changeEl._latestPatchNum) {
+          patchset = String(changeEl.latestPatchNum || changeEl._latestPatchNum || '');
+        }
       }
     }
     if (!project || !changeNum) {
@@ -1310,6 +1326,7 @@
         generateUniqueName,
         buildCreateRequest: (ctx) => buildCreateRequest(ctx),
         createWorkspaceStrict: (body) => createWorkspaceStrict(body),
+        getChangeContextFromPage: () => getChangeContextFromPage(),
         // Expose direct lookup for unit tests
         getWorkspaceByName: (n) => getWorkspaceByName(n),
         deleteWorkspaceByName: (n) => deleteWorkspaceByName(n),
