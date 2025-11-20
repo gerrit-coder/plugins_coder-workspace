@@ -566,6 +566,295 @@ describe('coder-workspace: Git Repository Cloning', () => {
     });
   });
 
+  describe('Branch Extraction and API Fallback', () => {
+    const getCtx = async (includeApiFallback = true) => await testHooks.getChangeContextFromPage(includeApiFallback);
+    let originalQuerySelector;
+    let originalLocation;
+    let originalFetch;
+
+    beforeEach(() => {
+      originalQuerySelector = document.querySelector;
+      originalLocation = window.location;
+      originalFetch = global.fetch;
+      delete window.location;
+      window.location = {
+        origin: 'https://gerrit.example.com',
+        pathname: '/c/test%2Fproject/+/12345/2',
+        href: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'
+      };
+      // Reset fetch mock for each test
+      global.fetch = jest.fn();
+    });
+
+    afterEach(() => {
+      document.querySelector = originalQuerySelector;
+      window.location = originalLocation;
+      global.fetch = originalFetch;
+    });
+
+    test('should extract branch from change object', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/main',
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      global.fetch = jest.fn();
+
+      const ctx = await getCtx();
+      expect(ctx.branch).toBe('refs/heads/main');
+      expect(ctx.branchShort).toBe('main');
+      // Should not call API when branch is available in DOM
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should extract branch from _change when change is not available', async () => {
+      const mockChangeView = {
+        change: null,
+        _change: {
+          project: 'test/project',
+          branch: 'refs/heads/develop',
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      global.fetch = jest.fn();
+
+      const ctx = await getCtx();
+      expect(ctx.branch).toBe('refs/heads/develop');
+      expect(ctx.branchShort).toBe('develop');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should extract branch from viewState when change is not hydrated', async () => {
+      const mockChangeView = {
+        change: null,
+        _change: null,
+        viewState: {
+          change: {
+            project: 'test/project',
+            branch: 'refs/heads/feature',
+            _number: 12345
+          }
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      global.fetch = jest.fn();
+
+      const ctx = await getCtx();
+      expect(ctx.branch).toBe('refs/heads/feature');
+      expect(ctx.branchShort).toBe('feature');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should fetch branch from REST API when not available in DOM', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: '', // Empty branch
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      // Mock successful API response with Gerrit's magic prefix
+      const apiResponse = {
+        ok: true,
+        text: () => Promise.resolve(")]}'\n{\"branch\":\"refs/heads/master\",\"_number\":12345,\"project\":\"test/project\"}")
+      };
+
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce(apiResponse); // First URL succeeds
+
+      const ctx = await getCtx(true);
+      expect(ctx.branch).toBe('refs/heads/master');
+      expect(ctx.branchShort).toBe('master');
+      expect(global.fetch).toHaveBeenCalled();
+      // Should try project~changeNum format first
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/changes/test%2Fproject~12345'),
+        expect.any(Object)
+      );
+    });
+
+    test('should try multiple API URL formats when first fails', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: '',
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      // Mock API responses: first fails, second succeeds
+      const apiResponse = {
+        ok: true,
+        text: () => Promise.resolve(")]}'\n{\"branch\":\"refs/heads/main\",\"_number\":12345}")
+      };
+
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: false }) // First URL fails
+        .mockResolvedValueOnce(apiResponse); // Second URL succeeds
+
+      const ctx = await getCtx(true);
+      expect(ctx.branch).toBe('refs/heads/main');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('should handle empty branch gracefully when API also fails', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: '',
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      // Mock all API calls failing
+      global.fetch = jest.fn().mockResolvedValue({ ok: false });
+
+      const ctx = await getCtx(true);
+      expect(ctx.branch).toBe('');
+      expect(ctx.branchShort).toBe('');
+      // Should still have other context
+      expect(ctx.repo).toBe('test/project');
+      expect(ctx.change).toBe('12345');
+      expect(ctx.patchset).toBe('2');
+    });
+
+    test('should not call API when includeApiFallback is false', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: '',
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      // Reset fetch mock to ensure clean state
+      global.fetch = jest.fn();
+
+      const ctx = await getCtx(false);
+      expect(ctx.branch).toBe('');
+      // Should not call API when includeApiFallback is false
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('should extract branch from change.ref property', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: '',
+          ref: 'refs/heads/release', // Branch stored as ref
+          _number: 12345
+        },
+        patchRange: { patchNum: 2 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') return mockGrApp;
+        return null;
+      });
+
+      global.fetch = jest.fn();
+
+      const ctx = await getCtx();
+      expect(ctx.branch).toBe('refs/heads/release');
+      expect(ctx.branchShort).toBe('release');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
 
   describe('Change Ref Format Validation', () => {
     test('should format change ref correctly for various change numbers', () => {

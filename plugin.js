@@ -137,7 +137,7 @@
     }));
   }
 
-  async function getChangeContextFromPage() {
+  async function getChangeContextFromPage(includeApiFallback = true) {
     const grApp = document.querySelector('gr-app');
     // Try to pick info off the change view; fallback to URL
     let project = '';
@@ -154,6 +154,21 @@
       project = change.project || '';
       branch = change.branch || '';
       changeNum = String(change._number || change.number || '');
+
+      // Try to get branch from various sources in the change object
+      if (!branch) {
+        // Try from change object directly
+        branch = change.branch || '';
+        // Try from _change if different
+        if (!branch && changeEl && changeEl._change && changeEl._change.branch) {
+          branch = changeEl._change.branch;
+        }
+        // Try from change object's ref property (sometimes branch is stored as ref)
+        if (!branch && change.ref) {
+          branch = change.ref;
+        }
+      }
+
       if (change.revisions && currentRevision && change.revisions[currentRevision]) {
         const rev = change.revisions[currentRevision];
         patchset = String((rev && rev._number) || '');
@@ -173,6 +188,29 @@
     if (changeEl) {
       if (!branch && changeEl.viewState && changeEl.viewState.change) {
         branch = changeEl.viewState.change.branch || branch;
+      }
+      // Try additional sources for branch
+      if (!branch) {
+        // Try from _change if available
+        if (changeEl._change && changeEl._change.branch) {
+          branch = changeEl._change.branch;
+        }
+        // Try from viewState directly
+        if (!branch && changeEl.viewState && changeEl.viewState.change && changeEl.viewState.change.branch) {
+          branch = changeEl.viewState.change.branch;
+        }
+        // Try from change element's branch property directly
+        if (!branch && changeEl.branch) {
+          branch = changeEl.branch;
+        }
+        // Try from change element's _branch property
+        if (!branch && changeEl._branch) {
+          branch = changeEl._branch;
+        }
+        // Try from metadata or other properties
+        if (!branch && changeEl.metadata && changeEl.metadata.branch) {
+          branch = changeEl.metadata.branch;
+        }
       }
       if (!patchset) {
         // Try patchRange first (most reliable for current view) - check both patchRange and _patchRange
@@ -243,10 +281,78 @@
       console.warn('[coder-workspace] No patchset found after all extraction attempts, defaulting to patchset 1 for change', changeNum);
     }
 
+    // Try to fetch branch from Gerrit REST API if still missing
+    if (!branch && changeNum && project && includeApiFallback) {
+      try {
+        const origin = window.location.origin;
+        // Use Gerrit REST API to get change details
+        // Gerrit API format: /changes/{change-id} where change-id can be:
+        // - project~branch~change-number (full format)
+        // - project~change-number (if branch is not needed in ID)
+        // - change-number (if unique in context)
+        // Try multiple formats
+        const apiUrls = [
+          `${origin}/changes/${encodeURIComponent(project + '~' + changeNum)}`,
+          `${origin}/changes/${encodeURIComponent(changeNum)}`,
+          `${origin}/a/changes/${encodeURIComponent(project + '~' + changeNum)}`,
+          `${origin}/a/changes/${encodeURIComponent(changeNum)}`
+        ];
+
+        let changeData = null;
+        for (const apiUrl of apiUrls) {
+          try {
+            const response = await fetch(apiUrl, {
+              credentials: 'include', // Include cookies for authentication
+              headers: {
+                'Accept': 'application/json'
+              }
+            });
+
+            if (response.ok) {
+              let text = await response.text();
+              // Gerrit REST API responses may have a magic prefix line that needs to be stripped
+              // Format: )]}'\n{json}
+              if (text.startsWith(")]}'\n")) {
+                text = text.substring(5);
+              } else if (text.startsWith(")]}'")) {
+                text = text.substring(4);
+              }
+              changeData = JSON.parse(text);
+              console.log('[coder-workspace] Successfully fetched change data from API:', apiUrl);
+              break;
+            } else {
+              console.debug('[coder-workspace] API call failed with status', response.status, 'for URL:', apiUrl);
+            }
+          } catch (e) {
+            // Try next URL format
+            console.debug('[coder-workspace] API call error for URL', apiUrl, ':', e);
+            continue;
+          }
+        }
+
+        if (changeData && changeData.branch) {
+          branch = changeData.branch;
+          console.log('[coder-workspace] Successfully fetched branch from REST API:', branch);
+        } else if (changeData) {
+          console.warn('[coder-workspace] Branch not found in API response. Response keys:', Object.keys(changeData || {}));
+          // Try alternative property names
+          if (!branch && changeData.ref) {
+            branch = changeData.ref;
+            console.log('[coder-workspace] Using ref as branch:', branch);
+          }
+        } else {
+          console.warn('[coder-workspace] No change data returned from API');
+        }
+      } catch (e) {
+        // Log error for debugging but don't fail - branch is optional
+        console.debug('[coder-workspace] Could not fetch branch from REST API:', e);
+      }
+    }
+
     // Debug logging to help diagnose context extraction issues
     const debugInfo = {
       repo: project,
-      branch: branch,
+      branch: branch || '(empty)',
       change: changeNum,
       patchset: patchset,
       url: location.href
@@ -309,23 +415,38 @@
 
   async function getChangeContextWithRetry(maxWaitMs = 5000, intervalMs = 100) {
     const start = Date.now();
-    let ctx = await getChangeContextFromPage();
+    // First attempt: try with API fallback enabled
+    let ctx = await getChangeContextFromPage(true);
     let attempts = 0;
     const maxAttempts = Math.floor(maxWaitMs / intervalMs);
+    let apiFallbackUsed = false;
 
-    // Wait for both branch and patchset to be populated
+    // Wait for patchset to be populated, and try to get branch if missing
     // Give the UI time to fully load the change data
-    while ((!ctx.branch || !ctx.patchset) && (Date.now() - start) < maxWaitMs && attempts < maxAttempts) {
+    while (!ctx.patchset && (Date.now() - start) < maxWaitMs && attempts < maxAttempts) {
       attempts++;
       await new Promise(r => setTimeout(r, intervalMs));
-      ctx = await getChangeContextFromPage();
-      // If we have both branch and patchset, we're done
-      if (ctx.branch && ctx.patchset) break;
+      // Try with API fallback on first retry if branch is still missing
+      const useApiFallback = !ctx.branch && !apiFallbackUsed;
+      if (useApiFallback) apiFallbackUsed = true;
+      ctx = await getChangeContextFromPage(useApiFallback);
+      // If we have patchset, we're done
+      if (ctx.patchset) break;
+    }
+
+    // If branch is still missing after retries, try one more API call
+    if (!ctx.branch && ctx.change && ctx.repo && !apiFallbackUsed) {
+      ctx = await getChangeContextFromPage(true);
     }
 
     // Log if we still don't have patchset after retries
     if (!ctx.patchset && ctx.change) {
       console.warn('[coder-workspace] Patchset still not found after', attempts, 'attempts, will default to 1');
+    }
+
+    // Log if branch is still empty (informational, not an error)
+    if (!ctx.branch && ctx.change) {
+      console.log('[coder-workspace] Branch is empty for change', ctx.change, '- this is acceptable and will use fallback workspace name patterns');
     }
 
     return ctx;
@@ -1403,7 +1524,7 @@
         generateUniqueName,
         buildCreateRequest: (ctx) => buildCreateRequest(ctx),
         createWorkspaceStrict: (body) => createWorkspaceStrict(body),
-        getChangeContextFromPage: () => getChangeContextFromPage(),
+        getChangeContextFromPage: (includeApiFallback) => getChangeContextFromPage(includeApiFallback),
         // Expose direct lookup for unit tests
         getWorkspaceByName: (n) => getWorkspaceByName(n),
         deleteWorkspaceByName: (n) => deleteWorkspaceByName(n),
