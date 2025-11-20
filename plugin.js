@@ -153,10 +153,10 @@
     if (change) {
       project = change.project || '';
       branch = change.branch || '';
-      changeNum = change._number || change.number || '';
+      changeNum = String(change._number || change.number || '');
       if (change.revisions && currentRevision && change.revisions[currentRevision]) {
         const rev = change.revisions[currentRevision];
-        patchset = (rev && rev._number) || '';
+        patchset = String((rev && rev._number) || '');
       }
       // Default to latest patchset if not present or falsy
       if (!patchset && change.revisions) {
@@ -175,32 +175,101 @@
         branch = changeEl.viewState.change.branch || branch;
       }
       if (!patchset) {
+        // Try patchRange first (most reliable for current view) - check both patchRange and _patchRange
         if (changeEl.patchRange && changeEl.patchRange.patchNum) {
           patchset = String(changeEl.patchRange.patchNum);
-        } else if (changeEl.latestPatchNum || changeEl._latestPatchNum) {
+        } else if (changeEl._patchRange && changeEl._patchRange.patchNum) {
+          patchset = String(changeEl._patchRange.patchNum);
+        }
+        // Try latestPatchNum properties
+        else if (changeEl.latestPatchNum || changeEl._latestPatchNum) {
           patchset = String(changeEl.latestPatchNum || changeEl._latestPatchNum || '');
+        }
+        // Try _allPatchSets to get the latest patchset number
+        else if (changeEl._allPatchSets && Array.isArray(changeEl._allPatchSets) && changeEl._allPatchSets.length > 0) {
+          try {
+            const patchNums = changeEl._allPatchSets
+              .map(ps => ps && (ps.number || ps._number))
+              .filter(n => typeof n === 'number');
+            if (patchNums.length) patchset = String(Math.max.apply(null, patchNums));
+          } catch (_) {}
+        }
+        // Try _currentRevision for patchset number
+        else if (changeEl._currentRevision) {
+          const currRev = changeEl._currentRevision;
+          if (currRev._number) patchset = String(currRev._number);
+          else if (currRev.number) patchset = String(currRev.number);
+        }
+        // Try currentRevision as patchset number (if it's a number, not a commit hash)
+        else if (currentRevision && typeof currentRevision === 'number') {
+          patchset = String(currentRevision);
+        }
+        // Try to get from viewState
+        else if (changeEl.viewState && changeEl.viewState.change) {
+          const viewChange = changeEl.viewState.change;
+          if (viewChange.revisions) {
+            try {
+              const nums = Object.values(viewChange.revisions)
+                .map(r => r && r._number)
+                .filter(n => typeof n === 'number');
+              if (nums.length) patchset = String(Math.max.apply(null, nums));
+            } catch (_) {}
+          }
         }
       }
     }
-    if (!project || !changeNum) {
-      // URL: /c/<project>/+/<change>/<patchset>
-      const path = (location && location.pathname) || '';
-      let m = path.match(/^\/c\/([^/]+)\/\+\/(\d+)(?:\/(\d+))?/);
-      if (m) {
-        project = decodeURIComponent(m[1]);
-        changeNum = m[2] || '';
-        patchset = patchset || (m[3] || '');
-      }
+    // Always try to extract from URL as a fallback
+    const path = (location && location.pathname) || '';
+    let m = path.match(/^\/c\/([^/]+)\/\+\/(\d+)(?:\/(\d+))?/);
+    if (m) {
+      if (!project) project = decodeURIComponent(m[1]);
+      if (!changeNum) changeNum = String(m[2] || '');
+      // Use URL patchset if we don't have one yet
+      if (!patchset && m[3]) patchset = String(m[3]);
+    }
+
+    // Ensure changeNum is always a string (convert number to string if needed)
+    changeNum = changeNum ? String(changeNum) : '';
+
+    // Ensure patchset is always a string
+    patchset = patchset ? String(patchset) : '';
+
+    // Final fallback: if we have a change number but no patchset, default to 1
+    // (every change has at least patchset 1)
+    // Only do this as a last resort - the retry logic should wait for the real value
+    // Check explicitly: changeNum must be non-empty string, patchset must be empty string
+    if (changeNum && changeNum.length > 0 && (!patchset || patchset.length === 0)) {
+      patchset = '1';
+      console.warn('[coder-workspace] No patchset found after all extraction attempts, defaulting to patchset 1 for change', changeNum);
     }
 
     // Debug logging to help diagnose context extraction issues
-    console.log('[coder-workspace] Change context extracted:', {
+    const debugInfo = {
       repo: project,
       branch: branch,
       change: changeNum,
       patchset: patchset,
       url: location.href
-    });
+    };
+    // Add detailed debug info if patchset is missing
+    if (!patchset && changeEl) {
+      try {
+        debugInfo.debug = {
+          hasChangeEl: !!changeEl,
+          patchRange: changeEl.patchRange ? {patchNum: changeEl.patchRange.patchNum} : null,
+          _patchRange: changeEl._patchRange ? {patchNum: changeEl._patchRange.patchNum} : null,
+          latestPatchNum: changeEl.latestPatchNum,
+          _latestPatchNum: changeEl._latestPatchNum,
+          currentRevision: currentRevision,
+          _currentRevision: changeEl._currentRevision ? {_number: changeEl._currentRevision._number, number: changeEl._currentRevision.number} : null,
+          _allPatchSets: changeEl._allPatchSets ? changeEl._allPatchSets.length : null,
+          changeRevisions: change && change.revisions ? Object.keys(change.revisions).length : null
+        };
+      } catch (e) {
+        debugInfo.debugError = String(e);
+      }
+    }
+    console.log('[coder-workspace] Change context extracted:', debugInfo);
 
     const origin = window.location.origin;
     const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}` + (patchset ? `/${patchset}` : '');
@@ -230,23 +299,35 @@
       repo: project,
       branch,
       branchShort,
-      change: changeNum,
-      patchset,
+      change: String(changeNum || ''),
+      patchset: String(patchset || ''),
       url,
       gitSshUrl: sshUrl,
       changeRef: changeRef
     };
   }
 
-  async function getChangeContextWithRetry(maxWaitMs = 1000, intervalMs = 100) {
+  async function getChangeContextWithRetry(maxWaitMs = 5000, intervalMs = 100) {
     const start = Date.now();
     let ctx = await getChangeContextFromPage();
-    // If branch is missing, wait briefly for the change view to populate
-    while (!ctx.branch && (Date.now() - start) < maxWaitMs) {
+    let attempts = 0;
+    const maxAttempts = Math.floor(maxWaitMs / intervalMs);
+
+    // Wait for both branch and patchset to be populated
+    // Give the UI time to fully load the change data
+    while ((!ctx.branch || !ctx.patchset) && (Date.now() - start) < maxWaitMs && attempts < maxAttempts) {
+      attempts++;
       await new Promise(r => setTimeout(r, intervalMs));
       ctx = await getChangeContextFromPage();
-      if (ctx.branch) break;
+      // If we have both branch and patchset, we're done
+      if (ctx.branch && ctx.patchset) break;
     }
+
+    // Log if we still don't have patchset after retries
+    if (!ctx.patchset && ctx.change) {
+      console.warn('[coder-workspace] Patchset still not found after', attempts, 'attempts, will default to 1');
+    }
+
     return ctx;
   }
 

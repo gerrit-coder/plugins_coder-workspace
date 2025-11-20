@@ -212,6 +212,48 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
 
       expect(context.patchset).toBe('3'); // Should be the highest number
     });
+
+    test('should default to patchset 1 when change exists but no patchset found', () => {
+      const mockChange = {
+        project: 'test/project',
+        branch: 'refs/heads/main',
+        _number: 12345,
+        revisions: {}
+      };
+
+      const mockChangeView = {
+        change: mockChange,
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: null,
+        _patchRange: null,
+        _allPatchSets: null,
+        _currentRevision: null
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: {
+          pathname: '/c/test%2Fproject/+/12345',
+          origin: 'https://gerrit.example.com',
+          href: 'https://gerrit.example.com/c/test%2Fproject/+/12345'
+        },
+        writable: true
+      });
+
+      document.querySelector.mockReturnValue(mockGrApp);
+
+      const context = getChangeContextFromPage();
+
+      expect(context.patchset).toBe('1'); // Should default to 1
+      expect(context.change).toBe('12345');
+      expect(context.changeRef).toBe('refs/changes/45/12345/1');
+    });
   });
 
   describe('Template Matching', () => {
@@ -779,19 +821,30 @@ function getChangeContextFromPage() {
     }
   }
 
-  if (!project || !changeNum) {
-    // URL: /c/<project>/+/<change>/<patchset>
-    const m = (window.location && window.location.pathname ? window.location.pathname : '')
-      .match(/^\/c\/([^/]+)\/\+\/(\d+)(?:\/(\d+))?/);
-    if (m) {
-      project = decodeURIComponent(m[1]);
-      changeNum = m[2] || '';
-      patchset = patchset || (m[3] || '');
-    }
+  // Always try to extract from URL as a fallback
+  const path = (window.location && window.location.pathname) || '';
+  const m = path.match(/^\/c\/([^/]+)\/\+\/(\d+)(?:\/(\d+))?/);
+  if (m) {
+    if (!project) project = decodeURIComponent(m[1]);
+    if (!changeNum) changeNum = String(m[2] || '');
+    // Use URL patchset if we don't have one yet
+    if (!patchset && m[3]) patchset = String(m[3]);
+  }
+
+  // Ensure changeNum is always a string
+  changeNum = changeNum ? String(changeNum) : '';
+
+  // Ensure patchset is always a string
+  patchset = patchset ? String(patchset) : '';
+
+  // Final fallback: if we have a change number but no patchset, default to 1
+  // (every change has at least patchset 1)
+  if (changeNum && changeNum.length > 0 && (!patchset || patchset.length === 0)) {
+    patchset = '1';
   }
 
   const origin = (window.location && window.location.origin) || '';
-  const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}/${patchset}`;
+  const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}` + (patchset ? `/${patchset}` : '');
 
   // Construct SSH git repository URL
   let sshUrl = '';

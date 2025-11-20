@@ -215,6 +215,250 @@ describe('coder-workspace: Git Repository Cloning', () => {
       expect(ctx.patchset).toBe('5');
       expect(ctx.branch).toBe('refs/heads/dev');
     });
+
+    test('uses _patchRange.patchNum when patchRange is not available', async () => {
+      const mockChangeView = {
+        change: null,
+        _change: null,
+        viewState: {
+          change: {
+            project: 'test/project',
+            branch: 'refs/heads/main',
+            _number: 12345
+          }
+        },
+        patchRange: null,
+        _patchRange: { patchNum: 3 }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('3');
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('uses _allPatchSets to get latest patchset number', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/main',
+          _number: 12345,
+          revisions: {}
+        },
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: null,
+        _allPatchSets: [
+          { number: 1 },
+          { number: 2 },
+          { number: 4 },
+          { _number: 3 }
+        ]
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('4'); // Should be max of [1, 2, 4, 3]
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('uses _currentRevision._number for patchset', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/main',
+          _number: 12345,
+          revisions: {}
+        },
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: null,
+        _currentRevision: {
+          _number: 6,
+          number: undefined
+        }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('6');
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('uses _currentRevision.number when _number not available', async () => {
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/main',
+          _number: 12345,
+          revisions: {}
+        },
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: null,
+        _currentRevision: {
+          _number: undefined,
+          number: 8
+        }
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('8');
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('uses viewState.change.revisions to get max patchset', async () => {
+      const mockChangeView = {
+        change: null,
+        _change: null,
+        viewState: {
+          change: {
+            project: 'test/project',
+            branch: 'refs/heads/main',
+            _number: 12345,
+            revisions: {
+              'abc123': { _number: 1 },
+              'def456': { _number: 3 },
+              'ghi789': { _number: 2 }
+            }
+          }
+        },
+        patchRange: null,
+        latestPatchNum: null
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('3'); // Should be max of [1, 3, 2]
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('defaults to patchset 1 when change number exists but no patchset found', async () => {
+      window.location.pathname = '/c/test%2Fproject/+/12345';
+      
+      const mockChangeView = {
+        change: {
+          project: 'test/project',
+          branch: 'refs/heads/main',
+          _number: 12345,
+          revisions: {}
+        },
+        currentRevision: null,
+        patchRange: null,
+        latestPatchNum: null,
+        _patchRange: null,
+        _allPatchSets: null,
+        _currentRevision: null
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('1'); // Should default to 1
+      expect(ctx.change).toBe('12345'); // Should always be a string
+      expect(ctx.branch).toBe('refs/heads/main');
+    });
+
+    test('extracts patchset from URL when available', async () => {
+      window.location.pathname = '/c/test%2Fproject/+/12345/9';
+      
+      const mockChangeView = {
+        change: null,
+        _change: null,
+        viewState: null,
+        patchRange: null
+      };
+
+      const mockGrApp = {
+        shadowRoot: {
+          querySelector: jest.fn().mockReturnValue(mockChangeView)
+        }
+      };
+
+      document.querySelector = jest.fn().mockImplementation(selector => {
+        if (selector === 'gr-app') {
+          return mockGrApp;
+        }
+        return null;
+      });
+
+      const ctx = await getCtx();
+      expect(ctx.patchset).toBe('9'); // Should extract from URL
+      expect(ctx.change).toBe('12345');
+      expect(ctx.repo).toBe('test/project');
+    });
   });
 
   describe('Rich Parameters with Git Fields', () => {
