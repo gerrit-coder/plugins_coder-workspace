@@ -1069,8 +1069,8 @@ async function previewAndConfirm(plugin, requestBody) {
 
 function validateMappingsSchema(value) {
   if (!Array.isArray(value)) return {valid: false, error: 'Mappings must be an array'};
-  const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','richParams']);
-  const allowedFrom = new Set(['repo','branch','change','patchset','url','gitSshUrl','changeRef']);
+  const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','gitSshUsername','richParams']);
+  const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','gitSshUsername','changeRef']);
   for (let i = 0; i < value.length; i++) {
     const m = value[i];
     if (typeof m !== 'object' || m == null) return {valid:false, error:`Entry #${i+1} must be an object`};
@@ -1083,7 +1083,7 @@ function validateMappingsSchema(value) {
         const rp = m.richParams[j];
         if (typeof rp !== 'object' || rp == null) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] must be an object`};
         if (!rp.name) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] missing 'name'`};
-        if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url,gitSshUrl,changeRef)`};
+        if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url,gitHttpUrl,gitSshUrl,gitSshUsername,changeRef)`};
       }
     }
   }

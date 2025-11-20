@@ -10,6 +10,8 @@
   // Settings are configured server-side in gerrit.config; no user-visible Settings menu.
 
   // Minimal config: server base URL and template id or version id.
+  const DEFAULT_GERRIT_SSH_USERNAME = 'admin';
+
   let config = {
     serverUrl: '', // e.g. https://coder.example.com
     apiKey: '', // API key (Coder-Session-Token)
@@ -28,6 +30,7 @@
       {name: 'GERRIT_CHANGE_URL', from: 'url'},
       {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
       {name: 'GERRIT_CHANGE_REF', from: 'changeRef'},
+      {name: 'GERRIT_SSH_USERNAME', from: 'gitSshUsername'},
     ],
     ttlMs: 0,
     openAfterCreate: true,
@@ -40,6 +43,7 @@
     // Optional: wait for app readiness before opening (0 = disabled)
     waitForAppReadyMs: 0,
     waitPollIntervalMs: 1000,
+    gitSshUsername: DEFAULT_GERRIT_SSH_USERNAME,
     enableDryRunPreview: false,
     // When true: do not reuse existing candidates or prefix search; create exact name from template.
     // On 409 conflict: do NOT auto-suffix; instead try opening the existing workspace by that name.
@@ -409,7 +413,8 @@
       patchset: String(patchset || ''),
       url,
       gitSshUrl: sshUrl,
-      changeRef: changeRef
+      changeRef: changeRef,
+      gitSshUsername: config.gitSshUsername || DEFAULT_GERRIT_SSH_USERNAME
     };
   }
 
@@ -470,6 +475,9 @@
           templateVersionId: m.templateVersionId || '',
           templateVersionPresetId: m.templateVersionPresetId || '',
           workspaceNameTemplate: m.workspaceNameTemplate || '',
+          gitSshUsername: m.gitSshUsername != null && m.gitSshUsername !== ''
+            ? m.gitSshUsername
+            : config.gitSshUsername || DEFAULT_GERRIT_SSH_USERNAME,
           richParams: m.richParams,
         };
       }
@@ -478,6 +486,7 @@
       templateId: config.templateId || '',
       templateVersionId: config.templateVersionId || '',
       templateVersionPresetId: config.templateVersionPresetId || '',
+      gitSshUsername: config.gitSshUsername || '',
     };
   }
 
@@ -487,6 +496,12 @@
     if (picked.richParams && picked.richParams.length) {
       context._richParamsOverride = picked.richParams;
     }
+    const gitSshUsername =
+      picked.gitSshUsername
+      ?? context.gitSshUsername
+      ?? config.gitSshUsername
+      ?? DEFAULT_GERRIT_SSH_USERNAME;
+    context.gitSshUsername = gitSshUsername;
     const name = renderNameTemplate(
       picked.workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}',
       context
@@ -1472,8 +1487,8 @@
 
   function validateMappingsSchema(value) {
     if (!Array.isArray(value)) return {valid: false, error: 'Mappings must be an array'};
-    const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','richParams']);
-    const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef']);
+    const allowedKeys = new Set(['repo','branch','templateId','templateVersionId','templateVersionPresetId','workspaceNameTemplate','gitSshUsername','richParams']);
+    const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef','gitSshUsername']);
     for (let i = 0; i < value.length; i++) {
       const m = value[i];
       if (typeof m !== 'object' || m == null) return {valid:false, error:`Entry #${i+1} must be an object`};
@@ -1490,7 +1505,7 @@
           const rp = m.richParams[j];
           if (typeof rp !== 'object' || rp == null) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] must be an object`};
           if (!rp.name) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] missing 'name'`};
-          if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url)`};
+        if (!rp.from || !allowedFrom.has(rp.from)) return {valid:false, error:`Entry #${i+1} richParams[#${j+1}] invalid 'from' (allowed: repo,branch,change,patchset,url,gitHttpUrl,gitSshUrl,gitSshUsername,changeRef)`};
         }
       }
     }

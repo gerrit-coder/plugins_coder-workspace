@@ -61,6 +61,9 @@ public class ConfigInfo {
   @SerializedName("enableCloneRepository")
   public boolean enableCloneRepository = true;
 
+  @SerializedName("gitSshUsername")
+  public String gitSshUsername;
+
   public static class RichParam {
     public String name;
     public String from;
@@ -80,6 +83,7 @@ public class ConfigInfo {
     public String templateVersionId;
     public String templateVersionPresetId;
     public String workspaceNameTemplate;
+    public String gitSshUsername;
     public List<RichParam> richParams;
   }
 
@@ -92,6 +96,7 @@ public class ConfigInfo {
     list.add(new RichParam("GERRIT_CHANGE_URL", "url"));
     list.add(new RichParam("GERRIT_GIT_SSH_URL", "gitSshUrl"));
     list.add(new RichParam("GERRIT_CHANGE_REF", "changeRef"));
+    list.add(new RichParam("GERRIT_SSH_USERNAME", "gitSshUsername"));
     return list;
   }
 }

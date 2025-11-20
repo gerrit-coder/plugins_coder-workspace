@@ -479,8 +479,30 @@ describe('coder-workspace: Git Repository Cloning', () => {
 
       expect(paramNames).toContain('GERRIT_GIT_SSH_URL');
       expect(paramNames).toContain('GERRIT_CHANGE_REF');
+      expect(paramNames).toContain('GERRIT_SSH_USERNAME');
       expect(paramNames).not.toContain('GERRIT_GIT_HTTP_URL');
       expect(paramNames).not.toContain('GERRIT_CLONE_AUTH');
+    });
+
+    test('should propagate configured SSH username into rich parameters', () => {
+      const { buildCreateRequest, setConfig } = testHooks;
+      setConfig({ gitSshUsername: 'admin' });
+      const ctx = {
+        repo: 'test/project',
+        branch: 'refs/heads/main',
+        change: '12345',
+        patchset: '2',
+        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
+        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
+        changeRef: 'refs/changes/45/12345/2'
+      };
+
+      const request = buildCreateRequest(ctx);
+      const sshUserParam = request.rich_parameter_values.find(p => p.name === 'GERRIT_SSH_USERNAME');
+      expect(sshUserParam).toBeDefined();
+      expect(sshUserParam.value).toBe('admin');
+
+      setConfig({ gitSshUsername: '' });
     });
 
     test('should handle custom rich params override', () => {
@@ -522,7 +544,8 @@ describe('coder-workspace: Git Repository Cloning', () => {
         {name: 'GERRIT_PATCHSET', from: 'patchset'},
         {name: 'GERRIT_CHANGE_URL', from: 'url'},
         {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
-        {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
+        {name: 'GERRIT_CHANGE_REF', from: 'changeRef'},
+        {name: 'GERRIT_SSH_USERNAME', from: 'gitSshUsername'}
       ];
 
       // Mock filtered config (as it would come from backend with enableCloneRepository = false)

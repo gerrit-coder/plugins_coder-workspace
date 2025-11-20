@@ -32,6 +32,9 @@
   # automatic repository cloning. When disabled, these parameters are not included.
   enableCloneRepository = true
 
+  # Optional: default SSH username to send via GERRIT_SSH_USERNAME
+  # gitSshUsername = admin
+
   # Workspace naming template (tokens: {repo}, {branch}, {branchShort}, {change}, {patchset})
   workspaceNameTemplate = "{repo}-{change}-{patchset}"
 

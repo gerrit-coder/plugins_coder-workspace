@@ -38,6 +38,7 @@ public class GetConfig implements RestReadView<ConfigResource> {
     info.openAfterCreate = cfg.getBoolean("openAfterCreate", info.openAfterCreate);
     info.enableDryRunPreview = cfg.getBoolean("enableDryRunPreview", info.enableDryRunPreview);
     info.ttlMs = cfg.getLong("ttlMs", info.ttlMs);
+    info.gitSshUsername = cfg.getString("gitSshUsername");
 
     // Optional app slug for deep linking to an app when latest_app_status.uri is not provided
     String appSlug = cfg.getString("appSlug");

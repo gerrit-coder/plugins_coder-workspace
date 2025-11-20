@@ -52,6 +52,10 @@ Add to `gerrit.config` (example):
   # When enabled, git-related rich parameters (GERRIT_GIT_SSH_URL, GERRIT_CHANGE_REF)
   # are passed to the workspace template, enabling automatic repository cloning.
   enableCloneRepository = true
+
+  # Optional: force a specific SSH username in the GERRIT_SSH_USERNAME rich parameter
+  # Defaults to "admin" when omitted.
+  # gitSshUsername = admin
   # Enforce exact-name creation (optional)
   workspaceNameTemplate = "{repo}-{change}"
   strictName = true
@@ -525,6 +529,7 @@ The following rich parameters are automatically included when `enableCloneReposi
 - `GERRIT_CHANGE`: Numeric change identifier
 - `GERRIT_PATCHSET`: Patchset number
 - `REPO`: Suggested directory name for the checkout
+- `GERRIT_SSH_USERNAME`: Preferred SSH username for cloning (defaults to `admin` but can be overridden via `gitSshUsername` in `gerrit.config` or template mappings)
 
 ### Using the Startup Script
 
@@ -543,6 +548,12 @@ data "coder_parameter" "gerrit_git_ssh_url" {
   default = ""
 }
 
+data "coder_parameter" "gerrit_ssh_username" {
+  name    = "GERRIT_SSH_USERNAME"
+  type    = "string"
+  default = ""
+}
+
 # Repeat for GERRIT_CHANGE_REF, GERRIT_CHANGE, GERRIT_PATCHSET, REPO...
 
 resource "coder_agent" "main" {
@@ -552,7 +563,11 @@ resource "coder_agent" "main" {
     GERRIT_CHANGE_REF   = data.coder_parameter.gerrit_change_ref.value
     GERRIT_CHANGE       = data.coder_parameter.gerrit_change.value
     GERRIT_PATCHSET     = data.coder_parameter.gerrit_patchset.value
+    GERRIT_SSH_USERNAME = data.coder_parameter.gerrit_ssh_username.value
     REPO                = data.coder_parameter.repo.value
+    # Optional: Customize git user identity for commits/cherry-picks
+    # GIT_USER_NAME      = "Your Name"
+    # GIT_USER_EMAIL     = "your.email@example.com"
   }
 }
 ```
@@ -569,7 +584,13 @@ Coder populates these data sources automatically when the workspace is created f
 # Make sure your template exposes these as environment variables:
 # - GERRIT_GIT_SSH_URL
 # - GERRIT_CHANGE_REF
+# - GERRIT_SSH_USERNAME (optional, overrides SSH username used for cloning)
 # - REPO (optional, used as directory name)
+
+# Configure git user identity (required for cherry-picks)
+# Defaults can be overridden via GIT_USER_NAME and GIT_USER_EMAIL env vars
+git config --global user.name "${GIT_USER_NAME:-Coder Workspace}"
+git config --global user.email "${GIT_USER_EMAIL:-coder@workspace.local}"
 
 # Download and execute the clone script
 curl -fsSL https://raw.githubusercontent.com/your-org/gerrit/plugins/coder-workspace/scripts/clone-and-cherrypick.sh | bash
@@ -588,6 +609,11 @@ You can also use the rich parameters directly in your Coder template:
 git config --global credential.helper ""
 unset GIT_ASKPASS || true
 export GIT_ASKPASS=""
+
+# Configure git user identity (required for commits/cherry-picks)
+# Defaults can be overridden via GIT_USER_NAME and GIT_USER_EMAIL env vars
+git config --global user.name "${GIT_USER_NAME:-Coder Workspace}"
+git config --global user.email "${GIT_USER_EMAIL:-coder@workspace.local}"
 
 # Prefer SSH URL when available
 GIT_URL="${GERRIT_GIT_SSH_URL}"
@@ -641,7 +667,7 @@ If you want to customize which git-related parameters are passed, you can overri
 ```ini
 [plugin "coder-workspace"]
   # Only include git SSH URL and change ref
-  richParams = REPO:repo,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_GIT_SSH_URL:gitSshUrl,GERRIT_CHANGE_REF:changeRef
+  richParams = REPO:repo,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_GIT_SSH_URL:gitSshUrl,GERRIT_CHANGE_REF:changeRef,GERRIT_SSH_USERNAME:gitSshUsername
 ```
 
 **Note:** If `enableCloneRepository = false`, git-related parameters will be filtered out even if they are explicitly included in `richParams`.
@@ -650,10 +676,13 @@ If you want to customize which git-related parameters are passed, you can overri
 
 - **SSH Authentication**: Ensure SSH keys are configured in the workspace (`~/.ssh/id_rsa` or similar)
 - **SSH Host Keys**: The first clone may prompt to accept the Gerrit host key. Configure known_hosts in your template if needed
+- **Git User Identity Errors** (e.g., "fatal: empty ident name"): Git requires `user.name` and `user.email` to be configured before performing commits or cherry-picks. Ensure your template startup script configures these values:
+  ```bash
+  git config --global user.name "${GIT_USER_NAME:-Coder Workspace}"
+  git config --global user.email "${GIT_USER_EMAIL:-coder@workspace.local}"
+  ```
+  You can customize the defaults by setting `GIT_USER_NAME` and `GIT_USER_EMAIL` environment variables in your Terraform template.
 - **Cherry-pick Conflicts**: If cherry-pick fails due to conflicts, the repository will be left in a cherry-pick state. Resolve conflicts manually and run `git cherry-pick --continue`
-- **Missing Parameters**:
-  - Verify that `GERRIT_CHANGE_REF` is set correctly. The ref format is `refs/changes/X/Y/Z` where X is the last 2 digits of the change number, Y is the full change number, and Z is the patchset number.
-  - If only `GERRIT_CHANGE` and `GERRIT_PATCHSET` are provided, construct the ref in your script (see examples above).
 
 ## Tests
 

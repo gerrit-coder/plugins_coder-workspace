@@ -82,9 +82,9 @@ public class JavaTest {
     assertFalse(config.enableDryRunPreview);
     assertEquals(3600000L, config.ttlMs);
 
-    // Verify default rich params are set (7 params including git-related ones)
+    // Verify default rich params are set (8 params including git-related ones)
     assertNotNull(config.richParams);
-    assertEquals(7, config.richParams.size());
+    assertEquals(8, config.richParams.size());
     assertEquals("REPO", config.richParams.get(0).name);
     assertEquals("repo", config.richParams.get(0).from);
     assertEquals("BRANCH", config.richParams.get(1).name);
@@ -99,6 +99,8 @@ public class JavaTest {
     assertEquals("gitSshUrl", config.richParams.get(5).from);
     assertEquals("GERRIT_CHANGE_REF", config.richParams.get(6).name);
     assertEquals("changeRef", config.richParams.get(6).from);
+    assertEquals("GERRIT_SSH_USERNAME", config.richParams.get(7).name);
+    assertEquals("gitSshUsername", config.richParams.get(7).from);
 
     // Verify template mappings are empty by default
     assertNotNull(config.templateMappings);
