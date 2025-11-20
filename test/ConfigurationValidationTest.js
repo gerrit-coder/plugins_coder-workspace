@@ -28,7 +28,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
       serverUrl: 'https://coder.example.com',
       apiKey: 'test-api-key-12345',
       organization: 'test-org-67890',
-      user: 'testuser',
       templateId: 'template-123',
       templateVersionId: 'version-456',
       templateVersionPresetId: 'preset-789',
@@ -399,12 +398,12 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
     test('should validate string fields are not null', () => {
       const config = {
         ...mockConfig,
-        user: null
+        serverUrl: null
       };
       const validation = validateConfiguration(config);
 
       expect(validation.valid).toBe(false);
-      expect(validation.errors).toContain('user cannot be null');
+      expect(validation.errors).toContain('serverUrl cannot be null');
     });
   });
 
@@ -414,7 +413,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         serverUrl: 'https://coder.example.com',
         apiKey: 'test-api-key',
         organization: 'test-org',
-        user: 'testuser',
         templateId: 'template-123',
         templateVersionId: 'version-456',
         templateVersionPresetId: 'preset-789',
@@ -455,7 +453,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         serverUrl: 'https://coder.example.com',
         apiKey: 'test-api-key',
         templateId: 'template-123',
-        user: 'testuser',
         openAfterCreate: true,
         enableDryRunPreview: false,
         ttlMs: 0,
@@ -473,7 +470,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         apiKey: '',
         templateId: '',
         templateVersionId: '',
-        user: null,
         ttlMs: -1,
         workspaceNameTemplate: '{invalid_token}',
         richParams: [
@@ -554,24 +550,32 @@ function validateConfiguration(config) {
   const errors = [];
 
   // Required fields
-  if (!config.serverUrl || config.serverUrl.trim() === '') {
+  if (config.serverUrl === null) {
+    errors.push('serverUrl cannot be null');
+  } else if (!config.serverUrl || config.serverUrl.trim() === '') {
     errors.push('serverUrl is required');
   } else if (!isValidUrl(config.serverUrl)) {
     errors.push('serverUrl must be a valid HTTPS URL');
   }
 
-  if (!config.apiKey || config.apiKey.trim() === '') {
+  if (config.apiKey === null) {
+    errors.push('apiKey cannot be null');
+  } else if (!config.apiKey || config.apiKey.trim() === '') {
     errors.push('apiKey is required');
   }
 
-  if ((!config.templateId || config.templateId.trim() === '') &&
+  // Check for null values first
+  if (config.templateId === null && (!config.templateVersionId || config.templateVersionId.trim() === '')) {
+    errors.push('templateId cannot be null');
+  }
+  if (config.templateVersionId === null && (!config.templateId || config.templateId.trim() === '')) {
+    errors.push('templateVersionId cannot be null');
+  }
+  // Then check if at least one is provided (non-null and non-empty)
+  if (config.templateId !== null && config.templateVersionId !== null &&
+      (!config.templateId || config.templateId.trim() === '') &&
       (!config.templateVersionId || config.templateVersionId.trim() === '')) {
     errors.push('Either templateId or templateVersionId must be specified');
-  }
-
-  // String fields
-  if (config.user === null || config.user === undefined) {
-    errors.push('user cannot be null');
   }
 
   // Boolean fields
@@ -590,7 +594,9 @@ function validateConfiguration(config) {
   }
 
   // Workspace name template
-  if (!config.workspaceNameTemplate || config.workspaceNameTemplate.trim() === '') {
+  if (config.workspaceNameTemplate === null) {
+    errors.push('workspaceNameTemplate cannot be null');
+  } else if (!config.workspaceNameTemplate || config.workspaceNameTemplate.trim() === '') {
     errors.push('workspaceNameTemplate cannot be empty');
   } else if (!isValidWorkspaceNameTemplate(config.workspaceNameTemplate)) {
     errors.push(`Invalid workspace name template token: ${config.workspaceNameTemplate}`);
@@ -601,7 +607,9 @@ function validateConfiguration(config) {
     const allowedFrom = new Set(['repo','branch','change','patchset','url','gitSshUrl','changeRef']);
     for (let i = 0; i < config.richParams.length; i++) {
       const rp = config.richParams[i];
-      if (!rp.name || rp.name.trim() === '') {
+      if (rp.name === null) {
+        errors.push(`Rich parameter ${i+1} name cannot be null`);
+      } else if (!rp.name || rp.name.trim() === '') {
         errors.push(`Rich parameter ${i+1} missing name`);
       }
       if (!rp.from || !allowedFrom.has(rp.from)) {
@@ -615,11 +623,20 @@ function validateConfiguration(config) {
     for (let i = 0; i < config.templateMappings.length; i++) {
       const mapping = config.templateMappings[i];
 
-      if (!mapping.repo || mapping.repo.trim() === '') {
+      if (mapping.repo === null) {
+        errors.push(`Template mapping ${i+1}: repo cannot be null`);
+      } else if (!mapping.repo || mapping.repo.trim() === '') {
         errors.push(`Template mapping ${i+1}: repo cannot be empty`);
       }
 
-      if ((!mapping.templateId || mapping.templateId.trim() === '') &&
+      if (mapping.templateId === null || mapping.templateVersionId === null) {
+        if (mapping.templateId === null && (!mapping.templateVersionId || mapping.templateVersionId.trim() === '')) {
+          errors.push(`Template mapping ${i+1}: templateId cannot be null`);
+        }
+        if (mapping.templateVersionId === null && (!mapping.templateId || mapping.templateId.trim() === '')) {
+          errors.push(`Template mapping ${i+1}: templateVersionId cannot be null`);
+        }
+      } else if ((!mapping.templateId || mapping.templateId.trim() === '') &&
           (!mapping.templateVersionId || mapping.templateVersionId.trim() === '')) {
         errors.push(`Template mapping ${i+1}: Either templateId or templateVersionId must be specified`);
       }
@@ -668,7 +685,6 @@ async function loadServerConfig(plugin) {
     serverUrl: '',
     apiKey: '',
     organization: '',
-    user: 'me',
     templateId: '',
     templateVersionId: '',
     templateVersionPresetId: '',

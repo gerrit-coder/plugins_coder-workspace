@@ -29,7 +29,6 @@ public class GetConfig implements RestReadView<ConfigResource> {
     info.serverUrl = cfg.getString("serverUrl");
     info.apiKey = cfg.getString("apiKey");
     info.organization = cfg.getString("organization");
-    info.user = cfg.getString("user", info.user);
 
     info.templateId = cfg.getString("templateId");
     info.templateVersionId = cfg.getString("templateVersionId");

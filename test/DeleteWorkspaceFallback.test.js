@@ -15,14 +15,14 @@ describe('coder-workspace: delete fallbacks', () => {
     const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
     // Use real lookup but we'll stub fetch responses deterministically
     setGetWorkspaceByName(undefined);
-    setConfig({ serverUrl: 'https://coder.example.com', user: 'lemon', apiKey: 'k', organization: '' });
+    setConfig({ serverUrl: 'https://coder.example.com', apiKey: 'k', organization: '' });
     global.fetch = jest.fn();
   });
 
   afterEach(() => {
     const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
     setGetWorkspaceByName(undefined);
-    setConfig({ serverUrl: '', user: 'me', apiKey: '', organization: '' });
+    setConfig({ serverUrl: '', apiKey: '', organization: '' });
     jest.clearAllMocks();
     // Restore console spies
     if (console.warn && console.warn.mockRestore) console.warn.mockRestore();
@@ -36,8 +36,9 @@ describe('coder-workspace: delete fallbacks', () => {
     const ws = { id: 'abc-123', name: 'gerrit-coder-1', owner_name: 'lemon' };
 
     // Mock fetch for getWorkspaceByName flow: singular by-name returns ws
+    // Note: getWorkspaceByName uses 'me' as the user segment, not the owner_name
     global.fetch.mockImplementationOnce((url, opts) => {
-      expect(url).toBe('https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1');
+      expect(url).toBe('https://coder.example.com/api/v2/users/me/workspace/gerrit-coder-1');
       return Promise.resolve({ ok: true, json: () => Promise.resolve(ws) });
     });
 

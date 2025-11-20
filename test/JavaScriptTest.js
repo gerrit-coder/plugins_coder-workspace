@@ -14,7 +14,6 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       serverUrl: 'https://coder.example.com',
       apiKey: 'test-api-key',
       organization: 'test-org',
-      user: 'testuser',
       templateId: 'template-123',
       templateVersionId: 'version-456',
       workspaceNameTemplate: '{repo}-{change}-{patchset}',
@@ -114,8 +113,7 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       expect(config).toEqual(expect.objectContaining({
         serverUrl: '',
         apiKey: '',
-        organization: '',
-        user: 'me'
+        organization: ''
       }));
     });
   });
@@ -731,7 +729,6 @@ async function loadServerConfig(plugin) {
     serverUrl: '',
     apiKey: '',
     organization: '',
-    user: 'me',
     templateId: '',
     templateVersionId: '',
     templateVersionPresetId: '',

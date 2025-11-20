@@ -12,8 +12,6 @@ public class ConfigInfo {
   public String apiKey;
   @SerializedName("organization")
   public String organization;
-  @SerializedName("user")
-  public String user = "me";
 
   @SerializedName("templateId")
   public String templateId;

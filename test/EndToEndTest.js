@@ -92,7 +92,6 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
       serverUrl: 'https://coder.example.com',
       apiKey: 'test-api-key-12345',
       organization: 'test-org-67890',
-      user: 'testuser',
       templateId: 'template-123',
       templateVersionId: 'version-456',
       workspaceNameTemplate: '{repo}-{change}-{patchset}',
@@ -351,7 +350,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
 
       // First call: check for existing workspace
       expect(global.fetch).toHaveBeenNthCalledWith(1,
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces/test-project-12345-3',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces/test-project-12345-3',
         expect.objectContaining({
           method: 'GET',
           headers: {
@@ -363,7 +362,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
 
       // Second call: create workspace
       expect(global.fetch).toHaveBeenNthCalledWith(2,
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces',
         expect.objectContaining({
           method: 'POST',
           headers: {
@@ -413,7 +412,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
       // Verify only one API call was made (lookup existing)
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces/test-project-12345-3',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces/test-project-12345-3',
         expect.objectContaining({
           method: 'GET'
         })
@@ -490,7 +489,7 @@ describe('Coder Workspace Plugin - End-to-End Tests', () => {
 
       // Verify deletion request
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces/test-project-12345-3',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces/test-project-12345-3',
         expect.objectContaining({
           method: 'DELETE',
           headers: {

@@ -45,7 +45,6 @@ Add to `gerrit.config` (example):
   templateId = c6d67e98-83ea-49f0-8812-e4abae2b68bc
   # templateVersionId = 0ba39c92-1f1b-4c32-aa3e-9925d7713eb1
   organization = 7c60d51f-b44e-4682-87d6-449835ea4de6
-  user = me
   openAfterCreate = true
   enableDryRunPreview = false
   ttlMs = 0

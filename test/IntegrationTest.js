@@ -14,7 +14,6 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
       serverUrl: 'https://coder.example.com',
       apiKey: 'test-api-key-12345',
       organization: 'test-org-67890',
-      user: 'testuser',
       templateId: 'template-123',
       templateVersionId: 'version-456',
       workspaceNameTemplate: '{repo}-{change}-{patchset}',
@@ -102,7 +101,7 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
 
       expect(result).toEqual(mockWorkspace);
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces',
         expect.objectContaining({
           method: 'POST',
           headers: {
@@ -199,7 +198,7 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
       const result = await createWorkspaceWithContext(context, configWithoutOrg);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/users/testuser/workspaces',
+        'https://coder.example.com/api/v2/users/me/workspaces',
         expect.objectContaining({
           method: 'POST',
           headers: {
@@ -288,7 +287,7 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
       const result = await getWorkspaceByName(expectedWorkspaceName, mockConfig);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces/existing-project-99999-1',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces/existing-project-99999-1',
         expect.objectContaining({
           method: 'GET',
           headers: {
@@ -356,6 +355,7 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
         url: 'https://gerrit.example.com/c/delete%2Fproject/+/66666/1'
       };
 
+      // The test helper deleteWorkspaceByName uses 'me' as the user segment
       global.fetch.mockResolvedValue({
         ok: true
       });
@@ -363,7 +363,7 @@ describe('Coder Workspace Plugin - Integration Tests', () => {
       await deleteWorkspaceByName(workspaceName, mockConfig);
 
       expect(global.fetch).toHaveBeenCalledWith(
-        'https://coder.example.com/api/v2/organizations/test-org-67890/members/testuser/workspaces/workspace-to-delete',
+        'https://coder.example.com/api/v2/organizations/test-org-67890/members/me/workspaces/workspace-to-delete',
         expect.objectContaining({
           method: 'DELETE',
           headers: {
@@ -759,9 +759,9 @@ async function createWorkspace(config, requestBody) {
   const base = String(config.serverUrl || '').replace(/\/$/, '');
   let url;
   if (config.organization) {
-    url = `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${encodeURIComponent(config.user || 'me')}/workspaces`;
+    url = `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/me/workspaces`;
   } else {
-    url = `${base}/api/v2/users/${encodeURIComponent(config.user || 'me')}/workspaces`;
+    url = `${base}/api/v2/users/me/workspaces`;
   }
 
   const res = await fetch(url, {method: 'POST', headers, body: JSON.stringify(requestBody)});
@@ -777,7 +777,7 @@ async function getWorkspaceByName(workspaceName, config) {
   if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
 
   const base = config.serverUrl.replace(/\/$/, '');
-  const userSeg = encodeURIComponent(config.user || 'me');
+  const userSeg = 'me';
   const nameSeg = encodeURIComponent(workspaceName);
   const url = config.organization
     ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`
@@ -797,7 +797,7 @@ async function deleteWorkspaceByName(workspaceName, config) {
   if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
 
   const base = config.serverUrl.replace(/\/$/, '');
-  const userSeg = encodeURIComponent(config.user || 'me');
+  const userSeg = 'me';
   const nameSeg = encodeURIComponent(workspaceName);
   const url = config.organization
     ? `${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${userSeg}/workspaces/${nameSeg}`

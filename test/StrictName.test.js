@@ -11,7 +11,6 @@ describe('coder-workspace: strictName create behavior', () => {
     setConfig({
       serverUrl: 'https://coder.example.com',
       apiKey: 'k',
-      user: 'lemon',
       organization: '',
       strictName: true,
       workspaceNameTemplate: '{repo}-{change}',
@@ -22,7 +21,7 @@ describe('coder-workspace: strictName create behavior', () => {
   afterEach(() => {
     const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
     setGetWorkspaceByName(undefined);
-    setConfig({ serverUrl: '', apiKey: '', user: 'me', organization: '', strictName: false });
+    setConfig({ serverUrl: '', apiKey: '', organization: '', strictName: false });
     jest.clearAllMocks();
   });
 
@@ -38,7 +37,7 @@ describe('coder-workspace: strictName create behavior', () => {
     const result = await createWorkspaceStrict(body);
     expect(result).toEqual(ws);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://coder.example.com/api/v2/users/lemon/workspaces',
+      'https://coder.example.com/api/v2/users/me/workspaces',
       expect.objectContaining({ method: 'POST' })
     );
   });
@@ -62,7 +61,7 @@ describe('coder-workspace: strictName create behavior', () => {
     // Assert singular GET-by-name path used
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
-      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      'https://coder.example.com/api/v2/users/me/workspace/gerrit-coder-1',
       expect.objectContaining({ method: 'GET' })
     );
 

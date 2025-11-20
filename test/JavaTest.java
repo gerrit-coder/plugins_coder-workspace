@@ -72,7 +72,6 @@ public class JavaTest {
     assertEquals("https://coder.example.com", config.serverUrl);
     assertEquals("test-api-key", config.apiKey);
     assertEquals("test-org", config.organization);
-    assertEquals("testuser", config.user);
     assertEquals("template-123", config.templateId);
     assertEquals("version-456", config.templateVersionId);
     assertEquals("preset-789", config.templateVersionPresetId);
@@ -353,7 +352,6 @@ public class JavaTest {
     ConfigInfo config = new ConfigInfo();
 
     // Then
-    assertEquals("me", config.user);
     assertEquals("{repo}-{change}-{patchset}", config.workspaceNameTemplate);
     assertEquals("always", config.automaticUpdates);
     assertTrue(config.autostart);
@@ -436,7 +434,6 @@ public class JavaTest {
     assertNull(config.serverUrl);
     assertNull(config.apiKey);
     assertNull(config.organization);
-    assertEquals("me", config.user);
     assertNull(config.templateId);
     assertNull(config.templateVersionId);
     assertNull(config.templateVersionPresetId);

@@ -12,7 +12,7 @@ describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
     // Configure server URL and user
     const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
     setGetWorkspaceByName(undefined); // ensure real implementation
-    setConfig({ serverUrl: 'https://coder.example.com', user: 'lemon', apiKey: 'k', organization: '' });
+    setConfig({ serverUrl: 'https://coder.example.com', apiKey: 'k', organization: '' });
     global.fetch = jest.fn();
   });
 
@@ -20,7 +20,7 @@ describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
     // Reset injected fetch and config
     const { setConfig, setGetWorkspaceByName } = window.__coderWorkspaceTest__;
     setGetWorkspaceByName(undefined);
-    setConfig({ serverUrl: '', user: 'me', apiKey: '', organization: '' });
+    setConfig({ serverUrl: '', apiKey: '', organization: '' });
     jest.clearAllMocks();
   });
 
@@ -34,7 +34,7 @@ describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
 
     expect(result).toEqual(ws);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      'https://coder.example.com/api/v2/users/me/workspace/gerrit-coder-1',
       expect.objectContaining({ method: 'GET', headers: expect.objectContaining({ Accept: 'application/json', 'Coder-Session-Token': 'k' }) })
     );
   });
@@ -59,12 +59,12 @@ describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
     expect(result).toEqual(ws);
     expect(global.fetch).toHaveBeenNthCalledWith(
       1,
-      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      'https://coder.example.com/api/v2/users/me/workspace/gerrit-coder-1',
       expect.objectContaining({ method: 'GET' })
     );
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
-      expect.stringMatching(/^https:\/\/coder\.example\.com\/api\/v2\/workspaces\?q=owner%3Alemon%20name%3Agerrit-coder-1&limit=10$/),
+      expect.stringMatching(/^https:\/\/coder\.example\.com\/api\/v2\/workspaces\?q=name%3Agerrit-coder-1&limit=10$/),
       expect.objectContaining({ method: 'GET' })
     );
     expect(global.fetch).toHaveBeenNthCalledWith(
@@ -90,11 +90,11 @@ describe('coder-workspace: GET-by-name variants and name-only fallback', () => {
     expect(result).toEqual(ws);
 
     expect(global.fetch).toHaveBeenNthCalledWith(1,
-      'https://coder.example.com/api/v2/users/lemon/workspace/gerrit-coder-1',
+      'https://coder.example.com/api/v2/users/me/workspace/gerrit-coder-1',
       expect.objectContaining({ method: 'GET' })
     );
     const secondUrl = global.fetch.mock.calls[1][0];
-    expect(secondUrl).toMatch(/^https:\/\/coder\.example\.com\/api\/v2\/users\/lemon\/workspace\/gerrit-coder-1/);
+    expect(secondUrl).toMatch(/^https:\/\/coder\.example\.com\/api\/v2\/users\/me\/workspace\/gerrit-coder-1/);
     expect(secondUrl).toContain('coder_session_token=k');
   });
 });

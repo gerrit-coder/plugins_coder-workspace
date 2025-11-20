@@ -14,7 +14,6 @@
     serverUrl: '', // e.g. https://coder.example.com
     apiKey: '', // API key (Coder-Session-Token)
     organization: '', // optional org id, if used
-    user: 'me', // 'me' to use current user
     templateId: '',
     templateVersionId: '',
     templateVersionPresetId: '',
@@ -382,9 +381,9 @@
 
     let url;
     if (config.organization) {
-      url = resolveCoderUrl(`/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${encodeURIComponent(config.user || 'me')}/workspaces`);
+      url = resolveCoderUrl(`/api/v2/organizations/${encodeURIComponent(config.organization)}/members/me/workspaces`);
     } else {
-      url = resolveCoderUrl(`/api/v2/users/${encodeURIComponent(config.user || 'me')}/workspaces`);
+      url = resolveCoderUrl(`/api/v2/users/me/workspaces`);
     }
 
     try {
@@ -432,7 +431,7 @@
     const headers = {'Accept': 'application/json'};
     if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
     const base = (config.serverUrl || '').replace(/\/$/, '');
-    const userSeg = encodeURIComponent(config.user || 'me');
+    const userSeg = 'me';
     const nameSeg = encodeURIComponent(workspaceName);
 
     // Try multiple API shapes for robustness and org support
@@ -463,7 +462,7 @@
       }
       if (lastStatus === 404) {
         // Fallback 1: use list API(s) with owner+name query, then filter exact match
-        const ownerToken = (config.user && config.user !== 'me') ? `owner:${config.user}` : '';
+        const ownerToken = '';
         const qParts = [];
         if (ownerToken) qParts.push(ownerToken);
         qParts.push(`name:${workspaceName}`);
@@ -481,7 +480,7 @@
               // Prefer exact owner match if available, else any name match
               let hit = null;
               if (Array.isArray(items1) && items1.length) {
-                hit = items1.find(w => w && w.name === workspaceName && (!config.user || config.user === 'me' || w.owner_name === config.user))
+                hit = items1.find(w => w && w.name === workspaceName)
                    || items1.find(w => w && w.name === workspaceName) || null;
               }
               if (hit) return hit;
@@ -527,7 +526,7 @@
     if (config.apiKey) headers['Coder-Session-Token'] = config.apiKey;
     const base = (config.serverUrl || '').replace(/\/$/, '');
     // Use global list endpoint with owner filter to retrieve current user's workspaces
-    const ownerQ = `owner:${config.user || 'me'}`;
+    const ownerQ = 'owner:me';
     const candidates = [];
     if (config.organization) candidates.push(`${base}/api/v2/organizations/${encodeURIComponent(config.organization)}/workspaces?q=${encodeURIComponent(ownerQ)}&limit=${encodeURIComponent(String(limit))}`);
     candidates.push(`${base}/api/v2/workspaces?q=${encodeURIComponent(ownerQ)}&limit=${encodeURIComponent(String(limit))}`);
@@ -654,7 +653,7 @@
       }
 
       // Build a list of candidate deletion requests (method + url + optional body)
-      const owner = ws.owner_name || (config.user && config.user !== 'me' ? config.user : 'me');
+      const owner = ws.owner_name || 'me';
       const candidates = [];
       // Primary: DELETE by id
       candidates.push({ method: 'DELETE', url: `${base}/api/v2/workspaces/${encodeURIComponent(ws.id)}` });
@@ -1229,8 +1228,8 @@
   async function previewAndConfirm(plugin, requestBody) {
     const base = (config.serverUrl || '').replace(/\/$/, '');
     const path = config.organization
-      ? `/api/v2/organizations/${encodeURIComponent(config.organization)}/members/${encodeURIComponent(config.user || 'me')}/workspaces`
-      : `/api/v2/users/${encodeURIComponent(config.user || 'me')}/workspaces`;
+      ? `/api/v2/organizations/${encodeURIComponent(config.organization)}/members/me/workspaces`
+      : `/api/v2/users/me/workspaces`;
     const url = base + path;
     const pre = document.createElement('pre');
     pre.textContent = JSON.stringify({ url, body: requestBody }, null, 2);
