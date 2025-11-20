@@ -48,6 +48,10 @@ Add to `gerrit.config` (example):
   openAfterCreate = true
   enableDryRunPreview = false
   ttlMs = 0
+  # Enable/disable repository cloning for Gerrit changes (default: true)
+  # When enabled, git-related rich parameters (GERRIT_GIT_SSH_URL, GERRIT_CHANGE_REF)
+  # are passed to the workspace template, enabling automatic repository cloning.
+  enableCloneRepository = true
   # Enforce exact-name creation (optional)
   workspaceNameTemplate = "{repo}-{change}"
   strictName = true
@@ -194,6 +198,7 @@ You can configure:
 - Template Mappings (JSON) via `templateMappingsJson`
 - Rich parameter mapping via `richParams`
 - Exact-name behavior via `strictName`
+- Repository cloning: `enableCloneRepository` (enable/disable git-related rich parameters)
 - Cross-browser auth helpers: `retryAuthWithQueryParam`, `apiKeyQueryParamName`, `appendTokenToAppUrl`
 
 #### Alternate name lookup and app deeplinks
@@ -228,7 +233,7 @@ Two optional settings help the plugin find existing workspaces and open a specif
    - Example:
       ```ini
       [plugin "coder-workspace"]
-         waitForAppReadyMs = 15000
+         waitForAppReadyMs = 35000
          waitPollIntervalMs = 1000
       ```
 
@@ -292,7 +297,7 @@ If a mapping provides `richParams`, it overrides the default parameter mapping f
 
 - On the change page, the "Open Coder Workspace" action targets the latest patchset if none is selected.
 - The plugin passes repo, branch, change, patchset and change URL as rich parameters by default (configurable).
-- The plugin also passes git repository URLs and change refs for automatic repository cloning and cherry-picking (see [Git Repository Cloning](#git-repository-cloning) below).
+- The plugin also passes git repository URLs and change refs for automatic repository cloning and cherry-picking when `enableCloneRepository = true` (default, see [Git Repository Cloning](#git-repository-cloning) below).
 
 ### Single Workspace Management
 
@@ -509,9 +514,11 @@ For additional support, include:
 
 The plugin automatically provides git repository URLs and change refs as rich parameters, enabling your Coder workspace template to automatically clone the Gerrit repository and cherry-pick the latest patchset when the workspace is created.
 
+**Note:** Repository cloning can be enabled or disabled via the `enableCloneRepository` configuration option. When set to `false`, git-related rich parameters (`GERRIT_GIT_SSH_URL` and `GERRIT_CHANGE_REF`) are not included in the workspace creation request. The default is `true` (enabled).
+
 ### Rich Parameters for Git Operations
 
-The following rich parameters are automatically included (in addition to the standard ones):
+The following rich parameters are automatically included when `enableCloneRepository = true` (in addition to the standard ones):
 
 - `GERRIT_GIT_SSH_URL`: SSH URL for the git repository (e.g., `ssh://gerrit.example.com:29418/my/project`)
 - `GERRIT_CHANGE_REF`: Git ref for the patchset (e.g., `refs/changes/74/67374/2`)
@@ -615,6 +622,18 @@ git fetch origin "${GERRIT_CHANGE_REF}"
 git cherry-pick FETCH_HEAD
 ```
 
+### Enabling or Disabling Repository Cloning
+
+To disable automatic repository cloning, set `enableCloneRepository = false` in your configuration:
+
+```ini
+[plugin "coder-workspace"]
+  # Disable repository cloning (git-related parameters will not be included)
+  enableCloneRepository = false
+```
+
+When disabled, the `GERRIT_GIT_SSH_URL` and `GERRIT_CHANGE_REF` parameters are filtered out from the rich parameters list, preventing workspace templates from automatically cloning the repository.
+
 ### Customizing Rich Parameters
 
 If you want to customize which git-related parameters are passed, you can override the `richParams` configuration:
@@ -624,6 +643,8 @@ If you want to customize which git-related parameters are passed, you can overri
   # Only include git SSH URL and change ref
   richParams = REPO:repo,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_GIT_SSH_URL:gitSshUrl,GERRIT_CHANGE_REF:changeRef
 ```
+
+**Note:** If `enableCloneRepository = false`, git-related parameters will be filtered out even if they are explicitly included in `richParams`.
 
 ### Troubleshooting Git Operations
 

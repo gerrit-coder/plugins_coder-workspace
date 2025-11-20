@@ -58,6 +58,9 @@ public class ConfigInfo {
   @SerializedName("navigateInSameTabOnBlock")
   public boolean navigateInSameTabOnBlock = true;
 
+  @SerializedName("enableCloneRepository")
+  public boolean enableCloneRepository = true;
+
   public static class RichParam {
     public String name;
     public String from;

@@ -464,6 +464,34 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
       expect(validation.valid).toBe(true);
     });
 
+    test('should validate configuration with filtered git-related rich params', () => {
+      // Simulate backend filtering when enableCloneRepository = false
+      // Git-related params (GERRIT_GIT_SSH_URL, GERRIT_CHANGE_REF) are filtered out
+      const filteredConfig = {
+        serverUrl: 'https://coder.example.com',
+        apiKey: 'test-api-key',
+        templateId: 'template-123',
+        organization: 'test-org',
+        workspaceNameTemplate: '{repo}-{change}-{patchset}',
+        richParams: [
+          {name: 'REPO', from: 'repo'},
+          {name: 'BRANCH', from: 'branch'},
+          {name: 'GERRIT_CHANGE', from: 'change'},
+          {name: 'GERRIT_PATCHSET', from: 'patchset'},
+          {name: 'GERRIT_CHANGE_URL', from: 'url'}
+          // GERRIT_GIT_SSH_URL and GERRIT_CHANGE_REF filtered out by backend
+        ],
+        openAfterCreate: true,
+        enableDryRunPreview: false,
+        ttlMs: 0
+      };
+
+      const validation = validateConfiguration(filteredConfig);
+
+      expect(validation.valid).toBe(true);
+      expect(validation.errors).toHaveLength(0);
+    });
+
     test('should handle multiple validation errors', () => {
       const invalidConfig = {
         serverUrl: '',

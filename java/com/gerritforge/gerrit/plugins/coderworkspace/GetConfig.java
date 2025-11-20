@@ -121,6 +121,23 @@ public class GetConfig implements RestReadView<ConfigResource> {
     // Popup-blocker mitigation: open a placeholder tab immediately and redirect later
     info.navigateInSameTabOnBlock = cfg.getBoolean("navigateInSameTabOnBlock", info.navigateInSameTabOnBlock);
 
+    // Enable/disable repository cloning for Gerrit changes
+    info.enableCloneRepository = cfg.getBoolean("enableCloneRepository", info.enableCloneRepository);
+
+    // Filter out git-related rich parameters if cloning is disabled
+    if (!info.enableCloneRepository) {
+      info.richParams.removeIf(p ->
+          "GERRIT_GIT_SSH_URL".equals(p.name) || "GERRIT_CHANGE_REF".equals(p.name));
+
+      // Also filter from template mappings
+      for (ConfigInfo.TemplateMapping mapping : info.templateMappings) {
+        if (mapping.richParams != null) {
+          mapping.richParams.removeIf(p ->
+              "GERRIT_GIT_SSH_URL".equals(p.name) || "GERRIT_CHANGE_REF".equals(p.name));
+        }
+      }
+    }
+
     return Response.ok(info);
   }
 }

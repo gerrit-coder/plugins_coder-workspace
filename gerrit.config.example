@@ -26,6 +26,12 @@
   enableDryRunPreview = false
   ttlMs = 0
 
+  # Enable/disable repository cloning for Gerrit changes
+  # When enabled (default), git-related rich parameters (GERRIT_GIT_SSH_URL,
+  # GERRIT_CHANGE_REF, etc.) are passed to the workspace template, enabling
+  # automatic repository cloning. When disabled, these parameters are not included.
+  enableCloneRepository = true
+
   # Workspace naming template (tokens: {repo}, {branch}, {branchShort}, {change}, {patchset})
   workspaceNameTemplate = "{repo}-{change}-{patchset}"
 
@@ -59,7 +65,7 @@
   # appSlug = code-server
 
   # Optional: wait for app readiness before opening (0 disables waiting)
-  # waitForAppReadyMs = 15000
+  # waitForAppReadyMs = 35000
   # waitPollIntervalMs = 1000
 
   # Cross-browser authentication helpers (optional)

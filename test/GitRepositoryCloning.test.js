@@ -396,7 +396,7 @@ describe('coder-workspace: Git Repository Cloning', () => {
 
     test('defaults to patchset 1 when change number exists but no patchset found', async () => {
       window.location.pathname = '/c/test%2Fproject/+/12345';
-      
+
       const mockChangeView = {
         change: {
           project: 'test/project',
@@ -433,7 +433,7 @@ describe('coder-workspace: Git Repository Cloning', () => {
 
     test('extracts patchset from URL when available', async () => {
       window.location.pathname = '/c/test%2Fproject/+/12345/9';
-      
+
       const mockChangeView = {
         change: null,
         _change: null,
@@ -507,6 +507,62 @@ describe('coder-workspace: Git Repository Cloning', () => {
       expect(paramNames).toContain('GERRIT_CHANGE_REF');
       expect(paramNames).not.toContain('GERRIT_GIT_HTTP_URL');
       expect(paramNames).not.toContain('GERRIT_CLONE_AUTH');
+    });
+
+    test('should exclude git-related parameters when enableCloneRepository is false', () => {
+      // Simulate backend filtering: when enableCloneRepository = false,
+      // the backend filters out GERRIT_GIT_SSH_URL and GERRIT_CHANGE_REF from richParams
+      const { buildCreateRequest, setConfig } = testHooks;
+
+      // Save original richParams (default from plugin.js)
+      const originalRichParams = [
+        {name: 'REPO', from: 'repo'},
+        {name: 'BRANCH', from: 'branch'},
+        {name: 'GERRIT_CHANGE', from: 'change'},
+        {name: 'GERRIT_PATCHSET', from: 'patchset'},
+        {name: 'GERRIT_CHANGE_URL', from: 'url'},
+        {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
+        {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
+      ];
+
+      // Mock filtered config (as it would come from backend with enableCloneRepository = false)
+      setConfig({
+        richParams: [
+          {name: 'REPO', from: 'repo'},
+          {name: 'BRANCH', from: 'branch'},
+          {name: 'GERRIT_CHANGE', from: 'change'},
+          {name: 'GERRIT_PATCHSET', from: 'patchset'},
+          {name: 'GERRIT_CHANGE_URL', from: 'url'}
+          // GERRIT_GIT_SSH_URL and GERRIT_CHANGE_REF are filtered out by backend
+        ]
+      });
+
+      const ctx = {
+        repo: 'test/project',
+        branch: 'refs/heads/main',
+        change: '12345',
+        patchset: '2',
+        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
+        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
+        changeRef: 'refs/changes/45/12345/2'
+      };
+
+      const request = buildCreateRequest(ctx);
+      const paramNames = request.rich_parameter_values.map(p => p.name);
+
+      // Git-related parameters should not be included when filtered
+      expect(paramNames).not.toContain('GERRIT_GIT_SSH_URL');
+      expect(paramNames).not.toContain('GERRIT_CHANGE_REF');
+
+      // Other parameters should still be included
+      expect(paramNames).toContain('REPO');
+      expect(paramNames).toContain('BRANCH');
+      expect(paramNames).toContain('GERRIT_CHANGE');
+      expect(paramNames).toContain('GERRIT_PATCHSET');
+      expect(paramNames).toContain('GERRIT_CHANGE_URL');
+
+      // Restore original config
+      setConfig({ richParams: originalRichParams });
     });
   });
 

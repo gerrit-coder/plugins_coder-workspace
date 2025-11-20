@@ -82,9 +82,9 @@ public class JavaTest {
     assertFalse(config.enableDryRunPreview);
     assertEquals(3600000L, config.ttlMs);
 
-    // Verify default rich params are set
+    // Verify default rich params are set (7 params including git-related ones)
     assertNotNull(config.richParams);
-    assertEquals(5, config.richParams.size());
+    assertEquals(7, config.richParams.size());
     assertEquals("REPO", config.richParams.get(0).name);
     assertEquals("repo", config.richParams.get(0).from);
     assertEquals("BRANCH", config.richParams.get(1).name);
@@ -95,6 +95,10 @@ public class JavaTest {
     assertEquals("patchset", config.richParams.get(3).from);
     assertEquals("GERRIT_CHANGE_URL", config.richParams.get(4).name);
     assertEquals("url", config.richParams.get(4).from);
+    assertEquals("GERRIT_GIT_SSH_URL", config.richParams.get(5).name);
+    assertEquals("gitSshUrl", config.richParams.get(5).from);
+    assertEquals("GERRIT_CHANGE_REF", config.richParams.get(6).name);
+    assertEquals("changeRef", config.richParams.get(6).from);
 
     // Verify template mappings are empty by default
     assertNotNull(config.templateMappings);
@@ -275,9 +279,90 @@ public class JavaTest {
     assertTrue(response.isOk());
     ConfigInfo config = response.value();
 
-    // Should use default rich params when empty string is provided
+    // Should use default rich params when empty string is provided (7 params including git-related ones)
     assertNotNull(config.richParams);
+    assertEquals(7, config.richParams.size());
+  }
+
+  @Test
+  public void testGetConfigWithEnableCloneRepositoryFalse() {
+    // Given
+    when(configFactory.getFromGerritConfig("coder-workspace")).thenReturn(pluginConfig);
+    when(pluginConfig.getString("serverUrl")).thenReturn("https://coder.example.com");
+    when(pluginConfig.getString("apiKey")).thenReturn("test-api-key");
+    when(pluginConfig.getString("organization")).thenReturn("test-org");
+    when(pluginConfig.getString("templateId")).thenReturn("template-123");
+    when(pluginConfig.getString("templateVersionId")).thenReturn(null);
+    when(pluginConfig.getString("templateVersionPresetId")).thenReturn(null);
+    when(pluginConfig.getString("workspaceNameTemplate", "{repo}-{change}-{patchset}"))
+        .thenReturn("{repo}-{change}-{patchset}");
+    when(pluginConfig.getBoolean("openAfterCreate", true)).thenReturn(true);
+    when(pluginConfig.getBoolean("enableDryRunPreview", false)).thenReturn(false);
+    when(pluginConfig.getLong("ttlMs", 0L)).thenReturn(0L);
+    when(pluginConfig.getString("richParams")).thenReturn(null);
+    when(pluginConfig.getString("templateMappingsJson")).thenReturn(null);
+    when(pluginConfig.getBoolean("enableCloneRepository", true)).thenReturn(false);
+
+    // When
+    Response<ConfigInfo> response = getConfig.apply(configResource);
+
+    // Then
+    assertTrue(response.isOk());
+    ConfigInfo config = response.value();
+
+    // Verify enableCloneRepository is false
+    assertFalse(config.enableCloneRepository);
+
+    // Verify git-related rich params are filtered out
+    assertNotNull(config.richParams);
+    // Should have 5 params (REPO, BRANCH, GERRIT_CHANGE, GERRIT_PATCHSET, GERRIT_CHANGE_URL)
+    // but NOT GERRIT_GIT_SSH_URL and GERRIT_CHANGE_REF
     assertEquals(5, config.richParams.size());
+    assertTrue(config.richParams.stream()
+        .noneMatch(p -> "GERRIT_GIT_SSH_URL".equals(p.name) || "GERRIT_CHANGE_REF".equals(p.name)));
+
+    // Verify other params are still present
+    assertTrue(config.richParams.stream().anyMatch(p -> "REPO".equals(p.name)));
+    assertTrue(config.richParams.stream().anyMatch(p -> "BRANCH".equals(p.name)));
+    assertTrue(config.richParams.stream().anyMatch(p -> "GERRIT_CHANGE".equals(p.name)));
+    assertTrue(config.richParams.stream().anyMatch(p -> "GERRIT_PATCHSET".equals(p.name)));
+    assertTrue(config.richParams.stream().anyMatch(p -> "GERRIT_CHANGE_URL".equals(p.name)));
+  }
+
+  @Test
+  public void testGetConfigWithEnableCloneRepositoryTrue() {
+    // Given
+    when(configFactory.getFromGerritConfig("coder-workspace")).thenReturn(pluginConfig);
+    when(pluginConfig.getString("serverUrl")).thenReturn("https://coder.example.com");
+    when(pluginConfig.getString("apiKey")).thenReturn("test-api-key");
+    when(pluginConfig.getString("organization")).thenReturn("test-org");
+    when(pluginConfig.getString("templateId")).thenReturn("template-123");
+    when(pluginConfig.getString("templateVersionId")).thenReturn(null);
+    when(pluginConfig.getString("templateVersionPresetId")).thenReturn(null);
+    when(pluginConfig.getString("workspaceNameTemplate", "{repo}-{change}-{patchset}"))
+        .thenReturn("{repo}-{change}-{patchset}");
+    when(pluginConfig.getBoolean("openAfterCreate", true)).thenReturn(true);
+    when(pluginConfig.getBoolean("enableDryRunPreview", false)).thenReturn(false);
+    when(pluginConfig.getLong("ttlMs", 0L)).thenReturn(0L);
+    when(pluginConfig.getString("richParams")).thenReturn(null);
+    when(pluginConfig.getString("templateMappingsJson")).thenReturn(null);
+    when(pluginConfig.getBoolean("enableCloneRepository", true)).thenReturn(true);
+
+    // When
+    Response<ConfigInfo> response = getConfig.apply(configResource);
+
+    // Then
+    assertTrue(response.isOk());
+    ConfigInfo config = response.value();
+
+    // Verify enableCloneRepository is true (default)
+    assertTrue(config.enableCloneRepository);
+
+    // Verify all rich params including git-related ones are present
+    assertNotNull(config.richParams);
+    assertEquals(7, config.richParams.size()); // All 7 default params
+    assertTrue(config.richParams.stream().anyMatch(p -> "GERRIT_GIT_SSH_URL".equals(p.name)));
+    assertTrue(config.richParams.stream().anyMatch(p -> "GERRIT_CHANGE_REF".equals(p.name)));
   }
 
   @Test
@@ -308,9 +393,9 @@ public class JavaTest {
     assertTrue(response.isOk());
     ConfigInfo config = response.value();
 
-    // Should use default rich params when only whitespace is provided
+    // Should use default rich params when only whitespace is provided (7 params including git-related ones)
     assertNotNull(config.richParams);
-    assertEquals(5, config.richParams.size());
+    assertEquals(7, config.richParams.size());
   }
 
   @Test
@@ -341,9 +426,9 @@ public class JavaTest {
     assertTrue(response.isOk());
     ConfigInfo config = response.value();
 
-    // Should use default rich params when format is invalid
+    // Should use default rich params when format is invalid (7 params including git-related ones)
     assertNotNull(config.richParams);
-    assertEquals(5, config.richParams.size());
+    assertEquals(7, config.richParams.size());
   }
 
   @Test
@@ -359,7 +444,7 @@ public class JavaTest {
     assertFalse(config.enableDryRunPreview);
     assertEquals(0L, config.ttlMs);
     assertNotNull(config.richParams);
-    assertEquals(5, config.richParams.size());
+    assertEquals(7, config.richParams.size()); // Default includes git-related params
     assertNotNull(config.templateMappings);
     assertTrue(config.templateMappings.isEmpty());
   }

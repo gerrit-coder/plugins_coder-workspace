@@ -474,6 +474,40 @@ describe('Coder Workspace Plugin - JavaScript Tests', () => {
       ]);
     });
 
+    test('should exclude git-related parameters when filtered from config', () => {
+      // Simulate backend filtering when enableCloneRepository = false
+      const filteredRichParams = [
+        {name: 'REPO', from: 'repo'},
+        {name: 'BRANCH', from: 'branch'},
+        {name: 'GERRIT_CHANGE', from: 'change'},
+        {name: 'GERRIT_PATCHSET', from: 'patchset'},
+        {name: 'GERRIT_CHANGE_URL', from: 'url'}
+        // GERRIT_GIT_SSH_URL and GERRIT_CHANGE_REF are filtered out
+      ];
+
+      const context = {
+        repo: 'test/project',
+        branch: 'refs/heads/main',
+        change: '12345',
+        patchset: '2',
+        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
+        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
+        changeRef: 'refs/changes/45/12345/2'
+      };
+
+      const result = toRichParameterValues(context, filteredRichParams);
+
+      // Git-related parameters should not be in the result
+      expect(result.find(p => p.name === 'GERRIT_GIT_SSH_URL')).toBeUndefined();
+      expect(result.find(p => p.name === 'GERRIT_CHANGE_REF')).toBeUndefined();
+
+      // Other parameters should still be included
+      expect(result.find(p => p.name === 'REPO')?.value).toBe('test/project');
+      expect(result.find(p => p.name === 'BRANCH')?.value).toBe('refs/heads/main');
+      expect(result.find(p => p.name === 'GERRIT_CHANGE')?.value).toBe('12345');
+      expect(result.find(p => p.name === 'GERRIT_PATCHSET')?.value).toBe('2');
+    });
+
     test('should handle missing context values', () => {
       const richParams = [
         {name: 'REPO', from: 'repo'},
