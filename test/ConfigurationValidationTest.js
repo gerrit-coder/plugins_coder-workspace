@@ -39,7 +39,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
         {name: 'GERRIT_CHANGE', from: 'change'},
         {name: 'GERRIT_PATCHSET', from: 'patchset'},
         {name: 'GERRIT_CHANGE_URL', from: 'url'},
-        {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
         {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
         {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
       ],
@@ -168,7 +167,7 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
     });
 
     test('should validate allowed source fields', () => {
-      const allowedFields = ['repo', 'branch', 'change', 'patchset', 'url', 'gitHttpUrl', 'gitSshUrl', 'changeRef'];
+      const allowedFields = ['repo', 'branch', 'change', 'patchset', 'url', 'gitSshUrl', 'changeRef'];
       const invalidFields = ['invalid', 'custom', 'unknown'];
 
       allowedFields.forEach(field => {
@@ -426,7 +425,6 @@ describe('Coder Workspace Plugin - Configuration Validation Tests', () => {
           {name: 'GERRIT_CHANGE', from: 'change'},
           {name: 'GERRIT_PATCHSET', from: 'patchset'},
           {name: 'GERRIT_CHANGE_URL', from: 'url'},
-          {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
           {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
           {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
         ],
@@ -600,7 +598,7 @@ function validateConfiguration(config) {
 
   // Rich parameters
   if (config.richParams) {
-    const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef']);
+    const allowedFrom = new Set(['repo','branch','change','patchset','url','gitSshUrl','changeRef']);
     for (let i = 0; i < config.richParams.length; i++) {
       const rp = config.richParams[i];
       if (!rp.name || rp.name.trim() === '') {
@@ -631,7 +629,7 @@ function validateConfiguration(config) {
       }
 
       if (mapping.richParams) {
-        const allowedFrom = new Set(['repo','branch','change','patchset','url','gitHttpUrl','gitSshUrl','changeRef']);
+        const allowedFrom = new Set(['repo','branch','change','patchset','url','gitSshUrl','changeRef']);
         for (let j = 0; j < mapping.richParams.length; j++) {
           const rp = mapping.richParams[j];
           if (!rp.from || !allowedFrom.has(rp.from)) {

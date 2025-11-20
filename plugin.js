@@ -27,7 +27,6 @@
       {name: 'GERRIT_CHANGE', from: 'change'},
       {name: 'GERRIT_PATCHSET', from: 'patchset'},
       {name: 'GERRIT_CHANGE_URL', from: 'url'},
-      {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
       {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
       {name: 'GERRIT_CHANGE_REF', from: 'changeRef'},
     ],
@@ -139,7 +138,7 @@
     }));
   }
 
-  function getChangeContextFromPage() {
+  async function getChangeContextFromPage() {
     const grApp = document.querySelector('gr-app');
     // Try to pick info off the change view; fallback to URL
     let project = '';
@@ -208,15 +207,11 @@
     const url = `${origin}/c/${encodeURIComponent(project)}/+/${changeNum}` + (patchset ? `/${patchset}` : '');
     const branchShort = branch ? String(branch).split('/').pop() : '';
 
-    // Construct git repository URLs (HTTP and SSH)
-    // HTTP URL: use the origin with /a/ prefix for authenticated access
-    const httpUrl = `${origin}/a/${project}`;
-    // SSH URL: extract hostname and construct SSH URL (default port 29418)
+    // Construct SSH URL for git repository (default port 29418)
     let sshUrl = '';
     try {
       const urlObj = new URL(origin);
       const hostname = urlObj.hostname;
-      const port = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80');
       // Default SSH port for Gerrit is 29418
       sshUrl = `ssh://${hostname}:29418/${project}`;
     } catch (_) {
@@ -239,7 +234,6 @@
       change: changeNum,
       patchset,
       url,
-      gitHttpUrl: httpUrl,
       gitSshUrl: sshUrl,
       changeRef: changeRef
     };
@@ -247,11 +241,11 @@
 
   async function getChangeContextWithRetry(maxWaitMs = 1000, intervalMs = 100) {
     const start = Date.now();
-    let ctx = getChangeContextFromPage();
+    let ctx = await getChangeContextFromPage();
     // If branch is missing, wait briefly for the change view to populate
     while (!ctx.branch && (Date.now() - start) < maxWaitMs) {
       await new Promise(r => setTimeout(r, intervalMs));
-      ctx = getChangeContextFromPage();
+      ctx = await getChangeContextFromPage();
       if (ctx.branch) break;
     }
     return ctx;
@@ -292,7 +286,10 @@
     if (picked.richParams && picked.richParams.length) {
       context._richParamsOverride = picked.richParams;
     }
-    const name = renderNameTemplate((picked.workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}'), context);
+    const name = renderNameTemplate(
+      picked.workspaceNameTemplate || config.workspaceNameTemplate || '{repo}-{change}-{patchset}',
+      context
+    );
     const body = {
       name,
       rich_parameter_values: toRichParameterValues(context),
@@ -1152,7 +1149,7 @@
               return;
             }
 
-            const ctx = getChangeContextFromPage();
+            const ctx = await getChangeContextFromPage();
             const currentMeta = loadCurrentMeta();
 
             // Check if current workspace matches the current context

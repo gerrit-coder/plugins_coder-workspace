@@ -37,7 +37,10 @@
   # strictName = false
 
   # Rich parameter mapping (maps Gerrit context to template parameters)
-  richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
+  # Default includes: REPO, BRANCH, GERRIT_CHANGE, GERRIT_PATCHSET, GERRIT_CHANGE_URL,
+  # GERRIT_GIT_SSH_URL, GERRIT_CHANGE_REF
+  # You can override with custom mapping if needed:
+  # richParams = REPO:repo,BRANCH:branch,GERRIT_CHANGE:change,GERRIT_PATCHSET:patchset,GERRIT_CHANGE_URL:url
 
   # Optional per-repo/branch template overrides (JSON string)
   # templateMappingsJson = [

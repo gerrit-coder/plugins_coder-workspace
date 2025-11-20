@@ -1,8 +1,7 @@
 #!/bin/bash
 # Startup script for Coder workspace to clone Gerrit repository and cherry-pick patchset
 # This script uses rich parameters passed from the coder-workspace plugin:
-# - GERRIT_GIT_HTTP_URL: HTTP URL for the git repository
-# - GERRIT_GIT_SSH_URL: SSH URL for the git repository (alternative)
+# - GERRIT_GIT_SSH_URL: SSH URL for the git repository
 # - GERRIT_CHANGE_REF: Git ref for the patchset (e.g., refs/changes/74/67374/2)
 # - REPO: Repository name (used as directory name)
 # - GERRIT_CHANGE: Change number
@@ -16,19 +15,14 @@ if [ -z "$REPO_DIR" ]; then
   REPO_DIR="gerrit-repo"
 fi
 
-# Prefer SSH URL when available (avoids HTTP auth prompts), fall back to HTTP
-if [ -n "$GERRIT_GIT_SSH_URL" ]; then
-  echo "Using SSH URL for cloning (no HTTP auth required)"
-  GIT_URL="$GERRIT_GIT_SSH_URL"
-else
-  GIT_URL="$GERRIT_GIT_HTTP_URL"
-  echo "Using HTTP URL for cloning"
-fi
-
-if [ -z "$GIT_URL" ]; then
-  echo "Error: Neither GERRIT_GIT_HTTP_URL nor GERRIT_GIT_SSH_URL is set"
+# Use SSH URL only
+if [ -z "$GERRIT_GIT_SSH_URL" ]; then
+  echo "Error: GERRIT_GIT_SSH_URL is not set"
   exit 1
 fi
+
+GIT_URL="$GERRIT_GIT_SSH_URL"
+echo "Cloning via SSH from $GIT_URL"
 
 # Construct change ref when change + patchset are available but change ref is not
 if [ -z "$GERRIT_CHANGE_REF" ] && [ -n "$GERRIT_CHANGE" ] && [ -n "$GERRIT_PATCHSET" ]; then
@@ -48,11 +42,6 @@ if [ -z "$GERRIT_CHANGE_REF" ]; then
   exit 1
 fi
 
-# Disable helper/askpass that may prompt for Coder credentials when cloning HTTP URLs
-git config --global credential.helper ""
-unset GIT_ASKPASS || true
-export GIT_ASKPASS=""
-
 # Check if repository already exists
 if [ -d "$REPO_DIR" ] && [ -d "$REPO_DIR/.git" ]; then
   echo "Repository $REPO_DIR already exists. Updating..."
@@ -68,7 +57,7 @@ else
   echo "Cloning repository from $GIT_URL..."
   git clone "$GIT_URL" "$REPO_DIR" || {
     echo "Error: Failed to clone repository"
-    echo "If cloning via HTTP, ensure credentials (e.g., ~/.netrc) are configured."
+    echo "Ensure SSH keys are configured for Gerrit access."
     exit 1
   }
 

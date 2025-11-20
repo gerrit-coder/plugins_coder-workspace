@@ -24,24 +24,6 @@ describe('coder-workspace: Git Repository Cloning', () => {
       };
     });
 
-    test('should construct HTTP git URL correctly', () => {
-      const { buildCreateRequest } = window.__coderWorkspaceTest__;
-      const ctx = {
-        repo: 'test/project',
-        branch: 'refs/heads/main',
-        change: '12345',
-        patchset: '2',
-        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
-        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
-        changeRef: 'refs/changes/45/12345/2'
-      };
-
-      const request = buildCreateRequest(ctx);
-      const httpUrlParam = request.rich_parameter_values.find(p => p.name === 'GERRIT_GIT_HTTP_URL');
-      expect(httpUrlParam).toBeDefined();
-      expect(httpUrlParam.value).toBe('https://gerrit.example.com/a/test/project');
-    });
 
     test('should construct SSH git URL correctly', () => {
       const { buildCreateRequest } = window.__coderWorkspaceTest__;
@@ -51,7 +33,6 @@ describe('coder-workspace: Git Repository Cloning', () => {
         change: '12345',
         patchset: '2',
         url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
         gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
         changeRef: 'refs/changes/45/12345/2'
       };
@@ -70,7 +51,6 @@ describe('coder-workspace: Git Repository Cloning', () => {
         change: '12345',
         patchset: '2',
         url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
         gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
         changeRef: 'refs/changes/45/12345/2'
       };
@@ -118,7 +98,6 @@ describe('coder-workspace: Git Repository Cloning', () => {
         change: '12345',
         patchset: '',
         url: 'https://gerrit.example.com/c/test%2Fproject/+/12345',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
         gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
         changeRef: '' // No patchset means no change ref
       };
@@ -131,62 +110,6 @@ describe('coder-workspace: Git Repository Cloning', () => {
   });
 
   describe('Git URL Construction from Context', () => {
-    test('should extract HTTP URL from origin', () => {
-      // This test verifies the logic in getChangeContextFromPage
-      // We'll test the actual function by mocking the DOM
-      const mockChange = {
-        project: 'test/project',
-        branch: 'refs/heads/main',
-        _number: 12345,
-        revisions: {
-          'abc123': { _number: 2 }
-        }
-      };
-
-      const mockChangeView = {
-        change: mockChange,
-        currentRevision: 'abc123'
-      };
-
-      const mockGrApp = {
-        shadowRoot: {
-          querySelector: jest.fn().mockReturnValue(mockChangeView)
-        }
-      };
-
-      document.querySelector = jest.fn().mockReturnValue(mockGrApp);
-
-      Object.defineProperty(window, 'location', {
-        value: {
-          origin: 'https://gerrit.example.com',
-          pathname: '/c/test%2Fproject/+/12345/2',
-          href: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2'
-        },
-        writable: true
-      });
-
-      // We need to access the actual function from the plugin
-      // Since getChangeContextFromPage is not exposed, we'll test via buildCreateRequest
-      const { buildCreateRequest } = window.__coderWorkspaceTest__;
-
-      // Create a context that mimics what getChangeContextFromPage would return
-      const ctx = {
-        repo: 'test/project',
-        branch: 'refs/heads/main',
-        change: '12345',
-        patchset: '2',
-        url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
-        gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
-        changeRef: 'refs/changes/45/12345/2'
-      };
-
-      const request = buildCreateRequest(ctx);
-      expect(request.rich_parameter_values).toContainEqual({
-        name: 'GERRIT_GIT_HTTP_URL',
-        value: 'https://gerrit.example.com/a/test/project'
-      });
-    });
 
     test('should construct SSH URL with default port 29418', () => {
       const ctx = {
@@ -199,42 +122,38 @@ describe('coder-workspace: Git Repository Cloning', () => {
 
       expect(ctx.gitSshUrl).toBe('ssh://gerrit.example.com:29418/test/project');
     });
-
-    test('should handle different origin formats', () => {
-      // Test HTTP origin
-      const httpOrigin = 'http://localhost:8080';
-      const httpUrl = `${httpOrigin}/a/test/project`;
-      expect(httpUrl).toBe('http://localhost:8080/a/test/project');
-
-      // Test HTTPS origin
-      const httpsOrigin = 'https://gerrit.example.com';
-      const httpsUrl = `${httpsOrigin}/a/test/project`;
-      expect(httpsUrl).toBe('https://gerrit.example.com/a/test/project');
-    });
   });
 
   describe('Change context patchset fallbacks', () => {
-    const getCtx = () => testHooks.getChangeContextFromPage();
+    const getCtx = async () => await testHooks.getChangeContextFromPage();
     let originalQuerySelector;
     let originalLocation;
+    let originalFetch;
 
     beforeEach(() => {
       originalQuerySelector = document.querySelector;
       originalLocation = window.location;
+      originalFetch = global.fetch;
       delete window.location;
       window.location = {
         origin: 'https://gerrit.example.com',
         pathname: '/c/test%2Fproject/+/12345',
         href: 'https://gerrit.example.com/c/test%2Fproject/+/12345'
       };
+      // Mock fetch to avoid actual API calls
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        json: () => Promise.resolve(null)
+      });
     });
 
     afterEach(() => {
       document.querySelector = originalQuerySelector;
       window.location = originalLocation;
+      global.fetch = originalFetch;
     });
 
-    test('uses patchRange.patchNum when change data not hydrated', () => {
+    test('uses patchRange.patchNum when change data not hydrated', async () => {
       const mockChangeView = {
         change: null,
         _change: null,
@@ -261,12 +180,12 @@ describe('coder-workspace: Git Repository Cloning', () => {
         return null;
       });
 
-      const ctx = getCtx();
+      const ctx = await getCtx();
       expect(ctx.patchset).toBe('7');
       expect(ctx.branch).toBe('refs/heads/main');
     });
 
-    test('falls back to latestPatchNum when patchRange missing', () => {
+    test('falls back to latestPatchNum when patchRange missing', async () => {
       const mockChangeView = {
         change: {
           project: 'test/project',
@@ -292,7 +211,7 @@ describe('coder-workspace: Git Repository Cloning', () => {
         return null;
       });
 
-      const ctx = getCtx();
+      const ctx = await getCtx();
       expect(ctx.patchset).toBe('5');
       expect(ctx.branch).toBe('refs/heads/dev');
     });
@@ -300,14 +219,13 @@ describe('coder-workspace: Git Repository Cloning', () => {
 
   describe('Rich Parameters with Git Fields', () => {
     test('should include all git-related rich parameters by default', () => {
-      const { buildCreateRequest } = window.__coderWorkspaceTest__;
+      const { buildCreateRequest } = testHooks;
       const ctx = {
         repo: 'test/project',
         branch: 'refs/heads/main',
         change: '12345',
         patchset: '2',
         url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
         gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
         changeRef: 'refs/changes/45/12345/2'
       };
@@ -315,25 +233,25 @@ describe('coder-workspace: Git Repository Cloning', () => {
       const request = buildCreateRequest(ctx);
       const paramNames = request.rich_parameter_values.map(p => p.name);
 
-      expect(paramNames).toContain('GERRIT_GIT_HTTP_URL');
       expect(paramNames).toContain('GERRIT_GIT_SSH_URL');
       expect(paramNames).toContain('GERRIT_CHANGE_REF');
+      expect(paramNames).not.toContain('GERRIT_GIT_HTTP_URL');
+      expect(paramNames).not.toContain('GERRIT_CLONE_AUTH');
     });
 
     test('should handle custom rich params override', () => {
-      const { buildCreateRequest } = window.__coderWorkspaceTest__;
+      const { buildCreateRequest } = testHooks;
       const ctx = {
         repo: 'test/project',
         branch: 'refs/heads/main',
         change: '12345',
         patchset: '2',
         url: 'https://gerrit.example.com/c/test%2Fproject/+/12345/2',
-        gitHttpUrl: 'https://gerrit.example.com/a/test/project',
         gitSshUrl: 'ssh://gerrit.example.com:29418/test/project',
         changeRef: 'refs/changes/45/12345/2',
         _richParamsOverride: [
           {name: 'REPO', from: 'repo'},
-          {name: 'GERRIT_GIT_HTTP_URL', from: 'gitHttpUrl'},
+          {name: 'GERRIT_GIT_SSH_URL', from: 'gitSshUrl'},
           {name: 'GERRIT_CHANGE_REF', from: 'changeRef'}
         ]
       };
@@ -341,11 +259,13 @@ describe('coder-workspace: Git Repository Cloning', () => {
       const request = buildCreateRequest(ctx);
       const paramNames = request.rich_parameter_values.map(p => p.name);
 
-      expect(paramNames).toContain('GERRIT_GIT_HTTP_URL');
+      expect(paramNames).toContain('GERRIT_GIT_SSH_URL');
       expect(paramNames).toContain('GERRIT_CHANGE_REF');
-      expect(paramNames).not.toContain('GERRIT_GIT_SSH_URL'); // Not in override
+      expect(paramNames).not.toContain('GERRIT_GIT_HTTP_URL');
+      expect(paramNames).not.toContain('GERRIT_CLONE_AUTH');
     });
   });
+
 
   describe('Change Ref Format Validation', () => {
     test('should format change ref correctly for various change numbers', () => {
